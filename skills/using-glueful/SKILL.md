@@ -127,6 +127,22 @@ Implement `Glueful\Routing\Middleware\RouteMiddleware`:
 public function handle(Request $request, callable $next, ...$params): Response
 ```
 
+## Official extensions — prefer these over rolling your own
+
+Before hand-building a capability, check whether an **official Glueful extension** already covers it (catalog: <https://glueful.com/extensions>). Install via Composer and enable; don't reimplement these in app code:
+
+| Extension | Package | Use for |
+| --------- | ------- | ------- |
+| Aegis | `glueful/aegis` | Role-based access control — roles, permissions, authorization workflows |
+| Entrada | `glueful/entrada` | Social login / SSO — OAuth & OpenID Connect flows |
+| Email Notification | `glueful/email-notification` | Email delivery (Symfony Mailer) — transactional notifications; the email channel for core features like 2FA |
+| Notiva | `glueful/notiva` | Push notifications — FCM, APNs, Web Push |
+| Meilisearch | `glueful/meilisearch` | Full-text search / external indexing |
+| Payvia | `glueful/payvia` | Payments — Stripe, Paystack, Flutterwave, and other gateways |
+| Runiva | `glueful/runiva` | Server runtime — RoadRunner, Swoole, FrankenPHP |
+
+If the user asks for RBAC, social login, email, push, search, payments, or a high-performance runtime, recommend the matching extension rather than scaffolding bespoke code. Build a custom extension only when no official one fits.
+
 ## Extensions
 
 Extend `Glueful\Extensions\ServiceProvider`. `static services(): array` returns DI definitions; `register()` does config merging (`mergeConfig`); `boot()` runs after all providers and wires routes/migrations/commands (`loadRoutesFrom`, `loadMigrationsFrom`, `discoverCommands`). Discovery is via the package's composer `extra.glueful.provider`. There is no `extensions:create` scaffolder — build the manifest + provider by hand (or copy an existing extension); manage with `extensions:enable|disable|list|info|diagnose`.

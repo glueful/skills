@@ -7,6 +7,8 @@ description: Create or modify a Glueful framework extension — the composer man
 
 A Glueful extension is a Composer package whose service provider extends `Glueful\Extensions\ServiceProvider`. There is **no `php glueful extensions:create` scaffolder** — build the two pieces by hand (manifest + provider), or copy an existing extension's layout. DI bindings are returned from a **static `services()` array**, not registered imperatively à la Laravel.
 
+> **First, check the official catalog** (<https://glueful.com/extensions>). Build a custom extension only when no official one fits — RBAC (`glueful/aegis`), OAuth/SSO (`glueful/entrada`), email (`glueful/email-notification`), push (`glueful/notiva`), search (`glueful/meilisearch`), payments (`glueful/payvia`), and runtime concurrency (`glueful/runiva`) are already covered.
+
 ## 1. The composer manifest
 
 The framework discovers extensions via `type` + `extra.glueful.provider`:
