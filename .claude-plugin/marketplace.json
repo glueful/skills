@@ -1,0 +1,16 @@
+{
+  "name": "glueful-skills",
+  "version": "0.1.0",
+  "description": "Marketplace wrapping the Glueful coding-assistant skills plugin",
+  "owner": {
+    "name": "Glueful",
+    "url": "https://github.com/glueful"
+  },
+  "plugins": [
+    {
+      "name": "glueful-skills",
+      "source": "./",
+      "description": "Coding-assistant skills for building with the Glueful PHP framework"
+    }
+  ]
+}
