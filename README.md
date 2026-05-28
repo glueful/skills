@@ -38,12 +38,12 @@ This repo is also a self-contained Claude Code plugin marketplace:
 | [`using-glueful`](skills/using-glueful/SKILL.md) | Writing or modifying any PHP in a Glueful project — controllers, models/ORM, routes, middleware, events, services, extensions, migrations. The baseline "this is not Laravel" conventions. |
 | [`glueful-write-migration`](skills/glueful-write-migration/SKILL.md) | Adding or changing database schema — `MigrationInterface` + the schema builder, idempotency guards, a working `down()`, and the version-safe `alterTable` form. |
 | [`glueful-add-controller`](skills/glueful-add-controller/SKILL.md) | Building API endpoints — `BaseController`, reading/validating input, the authenticated-user context, and the `Response` envelope. |
+| [`glueful-add-route`](skills/glueful-add-route/SKILL.md) | Registering routes — the fluent router, groups, attribute routing, middleware, and the builder-form rate limiting (not the ignored string form). |
 
 ### Roadmap
 
 Planned task-scoped skills (following the [flutter/skills](https://github.com/flutter/skills) naming pattern), to be added as each is verified against the framework:
 
-- `glueful-add-route` — fluent router, attribute routes, middleware, rate limiting
 - `glueful-build-orm-query` — Model statics, relations, eager loading, query result caching
 - `glueful-create-extension` — `ServiceProvider`, `services()`, `register()`/`boot()`, command discovery
 - `glueful-write-test` — the SQLite-backed `Connection` test pattern
