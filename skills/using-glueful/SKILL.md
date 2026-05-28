@@ -9,7 +9,7 @@ Glueful is a high-performance PHP 8.3+ API framework. It has **its own conventio
 
 ## Rule 0 — This is NOT Laravel
 
-Do not assume Laravel patterns, syntax, or method names apply. There is **no** `DB::transaction()`, no facade layer, no `Model::create()` static, no `Eloquent`, no `Artisan`, no `Blade`. Before using any method, **verify it exists** in `src/` (or `vendor/glueful/framework/src/`). If you can't find it, it almost certainly doesn't exist — search before writing.
+Do not assume Laravel patterns, syntax, or method names apply. There is **no** `DB::transaction()` facade, no `Eloquent`, no `Artisan`, no `Blade`. Crucially, where Glueful *does* have a familiar-looking API, the **signature differs** — e.g. `Model::create()`, `Model::find()`, `Model::query()` all exist but take `ApplicationContext` as the **first argument** (not Laravel's contextless statics). Before using any method, **verify it exists and check its signature** in `src/` (or `vendor/glueful/framework/src/`). If you can't find it, it almost certainly doesn't exist — search before writing.
 
 When a convenient method genuinely seems missing: search thoroughly first, then propose adding it to the framework with rationale — never invent or assume one.
 
@@ -144,7 +144,7 @@ Commands extend `Glueful\Console\BaseCommand`, carry a `#[AsCommand]` attribute,
 ## Quick "is this Laravel muscle memory?" checklist
 
 - `DB::`, `Cache::`, `Auth::`, `Route::` static facades → **no**; use `db($context)`, `app($context, …)`, the router instance.
-- `Model::create()` / `Model::all()` without context → **no**; `new Model([...], $context)->save()`, `Model::query($context)`.
+- `Model::create([...])` / `Model::all()` / `Model::query()` *without context* → **no**; they exist but are context-first: `Model::create($context, [...])`, `Model::query($context)`, or `new Model([...], $context)->save()`.
 - `php artisan` → **no**; `php glueful`.
 - Blade templates → **no**; this is an API framework (JSON responses via `Response::success`).
 - `env()` everywhere in code → prefer `config($context, …)`; `env()` is for config files and bootstrap.
