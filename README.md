@@ -39,6 +39,7 @@ This repo is also a self-contained Claude Code plugin marketplace:
 | [`glueful-write-migration`](skills/glueful-write-migration/SKILL.md) | Adding or changing database schema — `MigrationInterface` + the schema builder, idempotency guards, a working `down()`, and the version-safe `alterTable` form. |
 | [`glueful-add-controller`](skills/glueful-add-controller/SKILL.md) | Building API endpoints — `BaseController`, reading/validating input, the authenticated-user context, and the `Response` envelope. |
 | [`glueful-add-route`](skills/glueful-add-route/SKILL.md) | Registering routes — the fluent router, groups, attribute routing, middleware, and the builder-form rate limiting (not the ignored string form). |
+| [`glueful-write-test`](skills/glueful-write-test/SKILL.md) | Writing PHPUnit tests — the SQLite-backed `Connection` harness, mocking framework services, `ApplicationContext`/cache/`JWTService` setup, and the TDD loop. |
 
 ### Roadmap
 
@@ -46,7 +47,6 @@ Planned task-scoped skills (following the [flutter/skills](https://github.com/fl
 
 - `glueful-build-orm-query` — Model statics, relations, eager loading, query result caching
 - `glueful-create-extension` — `ServiceProvider`, `services()`, `register()`/`boot()`, command discovery
-- `glueful-write-test` — the SQLite-backed `Connection` test pattern
 
 Each skill is plain Markdown (`SKILL.md` with `name` + `description` frontmatter), so it works with any agent SDK that reads the skills convention.
 
