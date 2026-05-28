@@ -41,14 +41,9 @@ This repo is also a self-contained Claude Code plugin marketplace:
 | [`glueful-add-route`](skills/glueful-add-route/SKILL.md) | Registering routes — the fluent router, groups, attribute routing, middleware, and the builder-form rate limiting (not the ignored string form). |
 | [`glueful-write-test`](skills/glueful-write-test/SKILL.md) | Writing PHPUnit tests — the SQLite-backed `Connection` harness, mocking framework services, `ApplicationContext`/cache/`JWTService` setup, and the TDD loop. |
 | [`glueful-build-orm-query`](skills/glueful-build-orm-query/SKILL.md) | Querying/persisting with the ORM — context-first Model statics, the Builder, eager loading, relations, N+1 safety, and query result caching. |
+| [`glueful-create-extension`](skills/glueful-create-extension/SKILL.md) | Packaging an extension — the `glueful-extension` composer manifest, `ServiceProvider`, static `services()` DI, and the `register()`/`boot()` lifecycle. |
 
-### Roadmap
-
-Planned task-scoped skills (following the [flutter/skills](https://github.com/flutter/skills) naming pattern), to be added as each is verified against the framework:
-
-- `glueful-create-extension` — `ServiceProvider`, `services()`, `register()`/`boot()`, command discovery
-
-Each skill is plain Markdown (`SKILL.md` with `name` + `description` frontmatter), so it works with any agent SDK that reads the skills convention.
+Each skill is plain Markdown (`SKILL.md` with `name` + `description` frontmatter), so it works with any agent SDK that reads the skills convention. New task-scoped skills follow the [flutter/skills](https://github.com/flutter/skills) naming pattern (`glueful-<verb>-<noun>`) and should be verified against the framework source before merging — see [Versioning & accuracy](#versioning--accuracy).
 
 ## Versioning & accuracy
 

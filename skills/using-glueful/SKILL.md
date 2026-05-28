@@ -129,7 +129,7 @@ public function handle(Request $request, callable $next, ...$params): Response
 
 ## Extensions
 
-Extend `Glueful\Extensions\ServiceProvider`. `static services(): array` returns DI definitions; `register()` does runtime wiring (`loadRoutesFrom`, `mergeConfig`); `boot()` runs after all providers (`discoverCommands`, etc.). Scaffold with `php glueful extensions:create <Name>`.
+Extend `Glueful\Extensions\ServiceProvider`. `static services(): array` returns DI definitions; `register()` does config merging (`mergeConfig`); `boot()` runs after all providers and wires routes/migrations/commands (`loadRoutesFrom`, `loadMigrationsFrom`, `discoverCommands`). Discovery is via the package's composer `extra.glueful.provider`. There is no `extensions:create` scaffolder — build the manifest + provider by hand (or copy an existing extension); manage with `extensions:enable|disable|list|info|diagnose`.
 
 ## CLI
 
