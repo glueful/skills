@@ -145,11 +145,13 @@ If the user asks for RBAC, social login, email, push, search, payments, or a hig
 
 ## Extensions
 
-Extend `Glueful\Extensions\ServiceProvider`. `static services(): array` returns DI definitions; `register()` does config merging (`mergeConfig`); `boot()` runs after all providers and wires routes/migrations/commands (`loadRoutesFrom`, `loadMigrationsFrom`, `discoverCommands`). Discovery is via the package's composer `extra.glueful.provider`. There is no `extensions:create` scaffolder — build the manifest + provider by hand (or copy an existing extension); manage with `extensions:enable|disable|list|info|diagnose`.
+Extend `Glueful\Extensions\ServiceProvider`. `static services(): array` returns DI definitions; `register()` does config merging (`mergeConfig`); `boot()` runs after all providers and wires routes/migrations/commands (`loadRoutesFrom`, `loadMigrationsFrom`, `discoverCommands`). Discovery is via the package's composer `extra.glueful.provider`. Scaffold a new one with `php glueful create:extension <name>` (note: `create:extension`, **not** `extensions:create`); manage installed ones with `extensions:enable|disable|list|info|diagnose`.
 
 ## CLI
 
-Commands extend `Glueful\Console\BaseCommand`, carry a `#[AsCommand]` attribute, and are auto-discovered from `Console/Commands/`. Resolve string-keyed container services (e.g. the connection) with `$this->getServiceDynamic('database')`; class-keyed ones with `$this->getService(Foo::class)`.
+The console is `php glueful <command>` (artisan's analogue — but **not** `php artisan`). The framework also ships an executable bin that Composer symlinks, so `vendor/bin/glueful <command>` runs it **without `php`** (and `./glueful` works if the project's root entry has the execute bit). Prefer `php glueful` in docs/examples unless the project standardizes on the bin, and note the per-project console needs the app bootstrap — so the command set comes from the app + its enabled extensions.
+
+Writing commands: extend `Glueful\Console\BaseCommand`, carry a `#[AsCommand]` attribute, and they're auto-discovered from `Console/Commands/`. Resolve string-keyed container services (e.g. the connection) with `$this->getServiceDynamic('database')`; class-keyed ones with `$this->getService(Foo::class)`.
 
 ## When something seems missing
 

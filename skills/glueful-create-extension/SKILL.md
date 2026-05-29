@@ -5,7 +5,7 @@ description: Create or modify a Glueful framework extension — the composer man
 
 # Creating a Glueful Extension
 
-A Glueful extension is a Composer package whose service provider extends `Glueful\Extensions\ServiceProvider`. There is **no `php glueful extensions:create` scaffolder** — build the two pieces by hand (manifest + provider), or copy an existing extension's layout. DI bindings are returned from a **static `services()` array**, not registered imperatively à la Laravel.
+A Glueful extension is a Composer package whose service provider extends `Glueful\Extensions\ServiceProvider`. Scaffold one with **`php glueful create:extension <name>`** (note the namespace order — it's `create:extension`, **not** `extensions:create`), which writes the directory tree + a `ServiceProvider` stub; or build the manifest + provider by hand / copy an existing extension. DI bindings are returned from a **static `services()` array**, not registered imperatively à la Laravel.
 
 > **First, check the official catalog** (<https://glueful.com/extensions>). Build a custom extension only when no official one fits — RBAC (`glueful/aegis`), OAuth/SSO (`glueful/entrada`), email (`glueful/email-notification`), push (`glueful/notiva`), search (`glueful/meilisearch`), payments (`glueful/payvia`), and runtime concurrency (`glueful/runiva`) are already covered.
 
@@ -116,21 +116,23 @@ Available to your provider:
 - `mountStatic(string $mount, string $dir)` — serve static assets at `/extensions/{mount}/`.
 - `loadMessageCatalogs(string $dir, string $domain = 'messages')` — register translation catalogs.
 
-## Managing extensions (CLI)
+## CLI
 
-There is **no `extensions:create`**. The real commands:
+Scaffold and manage extensions. **Mind the namespaces** — scaffolding is `create:extension` (verb-first), management is `extensions:*` (noun-first); there is no `extensions:create`.
 
 ```bash
-php glueful extensions:list        # installed extensions
-php glueful extensions:info <name> # details
+php glueful create:extension <name>   # scaffold dir tree + ServiceProvider stub
+php glueful extensions:list           # installed extensions
+php glueful extensions:info <name>    # details
 php glueful extensions:enable <name>
 php glueful extensions:disable <name>
-php glueful extensions:diagnose    # health/registration checks
-php glueful extensions:cache       # compile/cache extension metadata
-php glueful extensions:clear       # clear that cache
+php glueful extensions:diagnose       # health/registration checks
+php glueful extensions:why <name>     # why an extension is (not) loaded
+php glueful extensions:cache          # compile/cache extension metadata
+php glueful extensions:clear          # clear that cache
 ```
 
-To scaffold a new one: create the package directory with the composer manifest + provider above (copying an existing extension under the org's `extensions/` is the fastest start), then `composer require` / path-repo it into the app and `extensions:enable` it.
+`create:extension` gives you a working skeleton; fill in `services()`, routes, and migrations as above. Copying an existing extension under the org's `extensions/` is also a fast start.
 
 ## Not-Laravel reminders
 
