@@ -49,7 +49,7 @@ This repo is also a self-contained Claude Code plugin marketplace:
 
 Further surfaces (resources, CLI commands, webhooks, uploads, seeders, API versioning) are intentionally deferred until real usage proves they recur — a skill earns its place by *frequency × surprise*, not coverage for its own sake.
 
-Each skill is plain Markdown (`SKILL.md` with `name` + `description` frontmatter), so it works with any agent SDK that reads the skills convention. New task-scoped skills follow the [flutter/skills](https://github.com/flutter/skills) naming pattern (`glueful-<verb>-<noun>`) and should be verified against the framework source before merging — see [Versioning & accuracy](#versioning--accuracy).
+Each skill is plain Markdown (`SKILL.md` with `name` + `description` frontmatter), so it works with any agent SDK that reads the skills convention. New task-scoped skills follow a `glueful-<verb>-<noun>` naming pattern and should be verified against the framework source before merging — see [Versioning & accuracy](#versioning--accuracy).
 
 ## Versioning & accuracy
 
