@@ -83,12 +83,24 @@ class WidgetsServiceProvider extends ServiceProvider
     /** Boot — runs after ALL providers are registered. Wire routes, migrations, commands. */
     public function boot(ApplicationContext $context): void
     {
-        $this->loadRoutesFrom(__DIR__ . '/routes.php');
-        $this->loadMigrationsFrom(dirname(__DIR__) . '/migrations');
+        // Paths match the `create:extension` scaffold layout (see below):
+        // provider in src/, routes in routes/, migrations in database/migrations/.
+        $this->loadRoutesFrom(__DIR__ . '/../routes/routes.php');
+        $this->loadMigrationsFrom(__DIR__ . '/../database/migrations');
         $this->discoverCommands(__NAMESPACE__ . '\\Console', __DIR__ . '/Console');
+
+        // Register metadata so extensions:list / extensions:info report it.
+        $this->app->get(\Glueful\Extensions\ExtensionManager::class)->registerMeta(self::class, [
+            'slug' => 'widgets',
+            'name' => 'Widgets',
+            'version' => '1.0.0',
+            'description' => '...',
+        ]);
     }
 }
 ```
+
+> **Scaffold layout** (what `php glueful create:extension Widgets` produces): `src/WidgetsServiceProvider.php`, `routes/routes.php`, `database/migrations/`, `config/`. Hence the `__DIR__ . '/../routes/routes.php'` and `__DIR__ . '/../database/migrations'` paths above — keep them aligned with the actual directory layout. Real extensions wrap each `boot()` step in try/catch (fail-fast in non-production) so one failure doesn't abort the whole framework boot.
 
 ### Service definition array shape
 
@@ -146,5 +158,6 @@ php glueful extensions:clear          # clear that cache
 - [ ] `composer.json`: `type: "glueful-extension"`, PSR-4 autoload, and `extra.glueful.provider` set to the provider FQCN (+ `requires.glueful` version).
 - [ ] Provider extends `Glueful\Extensions\ServiceProvider`.
 - [ ] DI via `static services(): array` (class/shared/autowire/arguments with `@` refs) — not imperative binding.
-- [ ] `register()` does config merge only; `boot()` loads routes/migrations/commands (guarded with try/catch).
+- [ ] `register()` does config merge only; `boot()` loads routes/migrations/commands (guarded with try/catch) and calls `registerMeta()` so `extensions:list`/`info` report it.
+- [ ] Route/migration paths match the scaffold layout (`../routes/routes.php`, `../database/migrations`).
 - [ ] Verified with `extensions:list` / `extensions:info` / `extensions:diagnose` after enabling.

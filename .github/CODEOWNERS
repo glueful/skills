@@ -1,0 +1,13 @@
+# Code owners for glueful/skills
+#
+# These owners are requested for review on pull requests that touch matching
+# paths. Enforced when the `main` branch protection rule has
+# "Require review from Code Owners" enabled.
+#
+# NOTE: entries must be GitHub usernames or teams with write access to the repo.
+# Adjust the handle/team below to match your account/org team.
+
+*                       @MichaelSowah
+
+# Skills are the product surface — keep an owner on them explicitly.
+/skills/                @MichaelSowah
