@@ -1,6 +1,6 @@
 ---
 name: glueful-add-route
-description: Register or modify routes in a Glueful framework project — the fluent router (get/post/put/delete, groups, where constraints), attribute routing, middleware, and rate limiting. Use when adding API endpoints' routing in a Glueful app. Glueful routing is NOT Laravel — there is no Route:: facade; route files receive a $router instance, and rate limits must use the builder method, not a middleware string.
+description: Register or modify routes in a Glueful framework project — the fluent router (get/post/put/delete, groups, where constraints), attribute routing, middleware, rate limiting, and the OpenAPI docblock annotations (@route/@summary/@requestBody/@response) that generate the API spec/SDK. Use when adding or documenting API endpoints in a Glueful app. Glueful routing is NOT Laravel — there is no Route facade; route files receive a $router instance, rate limits must use the builder method (not a middleware string), and docs come from route docblocks.
 ---
 
 # Adding a Glueful Route
@@ -99,9 +99,66 @@ final class WidgetController extends BaseController
 
 `#[Fields(allowed: [...], strict: true)]` declares field-selection whitelists; `#[RequireScope(...)]` is repeatable and gates by API-key scope.
 
-## OpenAPI doc annotations (optional but encouraged)
+## OpenAPI doc annotations
 
-Framework route files document endpoints with `@route`/`@summary`/`@requestBody`/`@response` docblock annotations above each route (parsed by the docs generator). Path params are auto-derived from `{param}` in the route path — don't add a `@param name:type=...` line (it doesn't match the generator's format and trips PHPDoc tooling). In the file-level docblock, fully-qualify `@var \Glueful\Routing\Router $router`.
+Glueful generates its OpenAPI spec from **docblock annotations above each route** (parsed by `CommentsDocGenerator`). Build the spec with `php glueful generate:openapi`, then generate an SDK — `generate:client` takes a **required language argument**:
+
+```bash
+php glueful generate:openapi
+php glueful generate:client typescript --spec openapi.json -o ./generated   # language is required
+# languages: typescript|ts, python, go, ruby, java, … ; --spec defaults to openapi.json, -o to ./generated
+```
+
+Annotate routes as you add them — the generated docs/SDK are only as good as these blocks.
+
+### The tags (exact grammar)
+
+```php
+/**
+ * @route POST /articles/{id}/comments
+ * @summary Add Comment
+ * @description Adds a comment to an article.
+ * @tag Comments
+ * @requiresAuth true
+ * @requestBody body:string="Comment text" parent_id:string="Parent comment UUID" {required=body}
+ * @response 201 application/json "Comment created" {
+ *   success:boolean="true",
+ *   message:string="Success message",
+ *   data:{
+ *     id:string="Comment UUID",
+ *     body:string="Comment text",
+ *     created_at:string="ISO timestamp"
+ *   }
+ * }
+ * @response 401 "Authentication required"
+ * @response 422 "Validation failed"
+ */
+$router->post('/articles/{id}/comments', [CommentController::class, 'store'])
+    ->where('id', '\d+')->middleware(['auth']);
+```
+
+- **`@route METHOD /path`** — required; the parser keys off this (regex `@route\s+([A-Z]+)\s+(\S+)`). No `@route`, no operation.
+- **`@summary` / `@description` / `@tag`** — free text; `@tag` groups operations in the spec (use a consistent tag like `Articles`).
+- **`@requiresAuth true`** — marks the operation as secured.
+- **`@requestBody`** — space-separated `field:type="description"` tokens; enums as `field:type[a,b,c]="..."`; mark required with a trailing `{required=field1,field2}`. May span multiple lines.
+- **`@response CODE [contentType] "description" { schema }`** — `contentType` defaults to `application/json`; the optional `{ schema }` uses the same `field:type="desc"` syntax and nests with `field:{ ... }`. Omit the schema for simple statuses (`@response 401 "Unauthorized"`). Document the `{success, message, data}` envelope shape your controller returns.
+
+### Parameters
+
+- **Path params auto-derive from `{param}` — but only when there are *no* `@param` tags at all.** The generator derives path params from the route path only if you wrote zero `@param` lines. The moment you add any `@param` (e.g. a query param), auto-derivation switches off and you must declare **every** param explicitly, including the path ones:
+  ```
+  @param id   path  string  true   "Article ID"
+  @param page query integer false  "Page number"
+  ```
+  So: a route with just `{id}` and no `@param` → `id` is documented automatically; a route with `{id}` *and* a `@param page query ...` → you must also add `@param id path string true "..."` or `id` goes undocumented.
+- **`@param` grammar is space-separated:** `@param NAME (path|query|header|cookie) TYPE (true|false) "description"` — never `name:type=` (that breaks PHPDoc tooling, see gotchas).
+- **operationId is generated for you** (`OperationIdGenerator` makes a unique camelCase id from the method + path) — don't hand-write one.
+
+### Gotchas (these have actually bitten)
+
+- **Never write `@param uuid:string="..."`.** That DSL doesn't match the generator's `@param` grammar *and* `@param` is a real PHPDoc tag, so IDEs/intelephense raise parse errors (P1129/P1133). Use `{param}` in the path (auto-derived) or the space-separated `@param` form above.
+- **File-level docblock: fully-qualify the `@var`** — `@var \Glueful\Routing\Router $router` (short `Router` trips PHPDoc tooling when the file has no `Router` usage in code).
+- **A route without `@route` is invisible** to the generator — every documented endpoint needs it.
 
 ## Not-Laravel reminders
 
@@ -117,4 +174,5 @@ Framework route files document endpoints with `@route`/`@summary`/`@requestBody`
 - [ ] Named middleware exists as a container service; custom middleware implements `RouteMiddleware`.
 - [ ] Path-param constraints via `->where(...)`; route named via `->name(...)`.
 - [ ] Optional/feature-flagged routes guarded with an `env()` early return.
-- [ ] (If a framework route) file-level `@var \Glueful\Routing\Router $router` is fully qualified; no malformed `@param` lines.
+- [ ] Documented with `@route`/`@summary`/`@tag`/`@requestBody`/`@response` (envelope schema); `operationId` left to the generator. Path params auto-derive from `{param}` **only when there are no `@param` tags** — if any `@param` is present, declare path params explicitly too (`@param id path string true "…"`).
+- [ ] No malformed `@param name:type=...` lines; file-level `@var \Glueful\Routing\Router $router` fully qualified. Ran `generate:openapi` to confirm the endpoint appears.
