@@ -5,7 +5,7 @@ description: Create or modify a Glueful framework extension — the composer man
 
 # Creating a Glueful Extension
 
-A Glueful extension is a Composer package whose service provider extends `Glueful\Extensions\ServiceProvider`. Scaffold one with **`php glueful create:extension <name>`** (note the namespace order — it's `create:extension`, **not** `extensions:create`), which writes the directory tree + a `ServiceProvider` stub; or build the manifest + provider by hand / copy an existing extension. DI bindings are returned from a **static `services()` array**, not registered imperatively à la Laravel.
+A Glueful extension is a Composer package whose service provider extends `Glueful\Extensions\ServiceProvider`. Scaffold one with **`php glueful create:extension <name>`** (note the namespace order — it's `create:extension`, **not** `extensions:create`): it writes a full Composer package under `extensions/<slug>/` (a `composer.json` with `type: glueful-extension` + `extra.glueful.provider`, PSR-4, `src/`, `routes/`, `config/`, `database/migrations/`), registers a Composer **path repository** in the app's `composer.json`, and **prints** the `composer require … && php glueful extensions:enable …` commands to finish (it does not run Composer itself). Or build the manifest + provider by hand / copy an existing extension. DI bindings are returned from a **static `services()` array**, not registered imperatively à la Laravel.
 
 > **First, check the official catalog** (<https://glueful.com/extensions>). Build a custom extension only when no official one fits — RBAC (`glueful/aegis`), OAuth/SSO (`glueful/entrada`), email (`glueful/email-notification`), push (`glueful/notiva`), search (`glueful/meilisearch`), payments (`glueful/payvia`), and runtime concurrency (`glueful/runiva`) are already covered.
 
@@ -18,7 +18,7 @@ The framework discovers extensions via `type` + `extra.glueful.provider`:
   "name": "glueful/widgets",
   "type": "glueful-extension",
   "autoload": { "psr-4": { "Glueful\\Extensions\\Widgets\\": "src/" } },
-  "require": { "glueful/framework": ">=1.46.0" },
+  "require": { "glueful/framework": ">=1.47.0" },
   "extra": {
     "glueful": {
       "name": "Widgets",
@@ -27,7 +27,7 @@ The framework discovers extensions via `type` + `extra.glueful.provider`:
       "version": "1.0.0",
       "provider": "Glueful\\Extensions\\Widgets\\WidgetsServiceProvider",
       "requires": {
-        "glueful": ">=1.46.0",
+        "glueful": ">=1.47.0",
         "extensions": []
       }
     }
@@ -36,6 +36,12 @@ The framework discovers extensions via `type` + `extra.glueful.provider`:
 ```
 
 The `extra.glueful.provider` FQCN is the entry point — without it the extension isn't discovered.
+
+> **Discovery ≠ activation.** Composer *discovers* `glueful-extension` packages, but an
+> installed extension does nothing until its provider FQCN is added to `config/extensions.php`'s
+> single `enabled` allow-list (plain string FQCNs, no `::class`). Use `php glueful extensions:enable <name>`
+> (it edits the list and recompiles), or add it by hand. `requires.extensions` lists provider FQCNs
+> that must **also** be enabled — they aren't auto-enabled; enabling one with an unmet dependency is refused.
 
 ## 2. The service provider
 
@@ -138,11 +144,15 @@ php glueful extensions:list           # installed extensions
 php glueful extensions:info <name>    # details
 php glueful extensions:enable <name>
 php glueful extensions:disable <name>
-php glueful extensions:diagnose       # health/registration checks
-php glueful extensions:why <name>     # why an extension is (not) loaded
-php glueful extensions:cache          # compile/cache extension metadata
+php glueful extensions:diagnose       # resolver errors, load order, prod cache presence
+php glueful extensions:cache          # compile the provider manifest (strict; required in prod)
 php glueful extensions:clear          # clear that cache
 ```
+
+`enable`/`disable` accept a package name, provider FQCN, or slug (case-insensitive),
+**validate before writing** (refuse to leave the config broken), edit the `enabled`
+list, and recompile. `extensions:list` shows each extension's state
+(`enabled ✓` / `available ○` / `enabled-but-missing ⚠`).
 
 `create:extension` gives you a working skeleton; fill in `services()`, routes, and migrations as above. Copying an existing extension under the org's `extensions/` is also a fast start.
 

@@ -77,9 +77,14 @@ final class AppServiceProvider
 ```
 
 ```php
-// config/serviceproviders.php  →  these app providers load (order preserved)
-App\Providers\AppServiceProvider::class,
-App\Providers\EventServiceProvider::class,
+// config/serviceproviders.php  →  single `enabled` list of app providers (order preserved)
+return [
+    'enabled' => [
+        // plain string FQCNs (no ::class) so tooling can edit the list safely
+        'App\\Providers\\AppServiceProvider',
+        'App\\Providers\\EventServiceProvider',
+    ],
+];
 ```
 
 A **lifecycle** provider extends `ServiceProvider` and wires subscribers in `register()`/`boot()` via `EventService::subscribe()`:
