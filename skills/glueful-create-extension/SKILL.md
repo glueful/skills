@@ -7,7 +7,7 @@ description: Create or modify a Glueful framework extension — the composer man
 
 A Glueful extension is a Composer package whose service provider extends `Glueful\Extensions\ServiceProvider`. Scaffold one with **`php glueful create:extension <name>`** (note the namespace order — it's `create:extension`, **not** `extensions:create`): it writes a full Composer package under `extensions/<slug>/` (a `composer.json` with `type: glueful-extension` + `extra.glueful.provider`, PSR-4, `src/`, `routes/`, `config/`, `database/migrations/`), registers a Composer **path repository** in the app's `composer.json`, and **prints** the `composer require … && php glueful extensions:enable …` commands to finish (it does not run Composer itself). Or build the manifest + provider by hand / copy an existing extension. DI bindings are returned from a **static `services()` array**, not registered imperatively à la Laravel.
 
-> **First, check the official catalog** (<https://glueful.com/extensions>). Build a custom extension only when no official one fits — RBAC (`glueful/aegis`), OAuth/SSO (`glueful/entrada`), email (`glueful/email-notification`), push (`glueful/notiva`), search (`glueful/meilisearch`), payments (`glueful/payvia`), and runtime concurrency (`glueful/runiva`) are already covered.
+> **First, check the official catalog** (<https://glueful.com/extensions>). Build a custom extension only when no official one fits — RBAC (`glueful/aegis`), OAuth/SSO (`glueful/entrada`), email (`glueful/email-notification`), push (`glueful/notiva`), SMS/WhatsApp messaging (`glueful/conversa`), search (`glueful/meilisearch`), payments (`glueful/payvia`), and runtime concurrency (`glueful/runiva`) are already covered.
 
 ## 1. The composer manifest
 
