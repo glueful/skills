@@ -84,8 +84,10 @@ $userUuid = $this->userContext->getUserUuid();   // ?string
 if ($userUuid === null) {
     throw new \Glueful\Http\Exceptions\Domain\AuthenticationException('Authentication required');
 }
-$user = $this->userContext->getUser();            // ?AuthenticatedUser ($user->email, etc.)
+$user = $this->userContext->getUser();            // ?Glueful\Auth\UserIdentity ($user->uuid(), $user->email())
 ```
+
+> As of framework 1.50.0 the user is a canonical, immutable `Glueful\Auth\UserIdentity` (accessors are **methods**: `$user->uuid()`, `$user->email()`, plus `roles()`/`scopes()` and an open claims bag) — the old `AuthenticatedUser` class was removed when the concrete user store moved to the `glueful/users` extension. `BaseController` also exposes it as `$this->currentUser` (already initialized in the constructor).
 
 ## Returning responses
 

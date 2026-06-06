@@ -9,7 +9,9 @@ Glueful migrations are plain classes implementing `Glueful\Database\Migrations\M
 
 ## Where migrations live & how to run them
 
-The framework ships only the migration *infrastructure* (`src/Database/Migrations/`). Actual migration files live in the **consumer app** (e.g. api-skeleton's `database/migrations/`), numbered sequentially: `001_CreateInitialSchema.php`, `010_AddTwoFactorEnabledToUsers.php`, etc.
+The migration *infrastructure* is in `src/Database/Migrations/`. **App** migrations live in the **consumer app** (e.g. api-skeleton's `database/migrations/`), numbered sequentially: `001_CreateInitialSchema.php`, `010_AddTwoFactorEnabledToUsers.php`, etc.
+
+> **Framework & extensions also own schema now (≥ 1.50).** The framework ships its own foundation migrations for the tables its code reads/writes (`auth_sessions`, `auth_refresh_tokens`, `api_keys`, plus config-gated capability tables — queue, scheduler, notifications, metrics, locks, uploads, archive), and extensions ship theirs. Pending migrations from all sources run as one ordered stream sorted by **`MigrationPriority`** (`FOUNDATION` -200 → `IDENTITY` -100 → `DEFAULT` 0 → `DEPENDENT` 100) then filename, and the `migrations` table has a **`source`** column so two packages can ship the same filename without conflict. App migrations are `DEFAULT`; an extension whose tables reference the user store registers at `DEPENDENT` (see `glueful-create-extension`). **Don't add a DB-level foreign key into `users`** — the user store is a swappable extension (`glueful/users`); use an indexed `user_uuid` UUID column with no `foreign()` constraint.
 
 ```bash
 php glueful migrate:create <name>   # scaffold a new migration
