@@ -145,18 +145,20 @@ $router->post('/articles/{id}/comments', [CommentController::class, 'store'])
 
 ### Parameters
 
-- **Path params auto-derive from `{param}` — but only when there are *no* `@param` tags at all.** The generator derives path params from the route path only if you wrote zero `@param` lines. The moment you add any `@param` (e.g. a query param), auto-derivation switches off and you must declare **every** param explicitly, including the path ones:
+- **Query params — use `@queryParam` (framework ≥ 1.50.2):** `@queryParam NAME:TYPE="description"`, with an optional trailing `{required}`. This is the **editor-clean, preferred** form — it isn't a reserved PHPDoc tag, so IDEs/intelephense don't mis-read the tokens as types (the `P1133` warnings the old `@param` form caused).
   ```
-  @param id   path  string  true   "Article ID"
-  @param page query integer false  "Page number"
+  @queryParam page:integer="Page number"
+  @queryParam q:string="Search term" {required}
   ```
-  So: a route with just `{id}` and no `@param` → `id` is documented automatically; a route with `{id}` *and* a `@param page query ...` → you must also add `@param id path string true "..."` or `id` goes undocumented.
-- **`@param` grammar is space-separated:** `@param NAME (path|query|header|cookie) TYPE (true|false) "description"` — never `name:type=` (that breaks PHPDoc tooling, see gotchas).
+  `TYPE` ∈ `string|integer|number|boolean|array|object`. Default is optional; add `{required}` to mark it required.
+- **Path params auto-derive from `{param}` — always.** As of framework 1.50.2 the generator *always* derives `{name}` path params from the route URL (type `string`, required) and **merges** them with any documented params, de-duplicating by name. So you normally write **no** param line for path params at all — just `{id}` in the path documents `id`. (An explicit declaration still wins if you need a richer type/description.)
+  > **Pre-1.50.2 caveat:** older framework versions auto-derived path params *only when no param tags were present at all*, so a route mixing a query param with a `{id}` would drop the path param. If the project pins framework `< 1.50.2`, either declare the path param explicitly or upgrade.
+- **Legacy `@param` form (still parsed):** `@param NAME (path|query|header|cookie) TYPE (true|false) "description"` — space-separated. Still works, but overloading the reserved `@param` tag trips IDE `P1133`/`P1129` warnings; prefer `@queryParam` for query params and `{param}` auto-derivation for path params.
 - **operationId is generated for you** (`OperationIdGenerator` makes a unique camelCase id from the method + path) — don't hand-write one.
 
 ### Gotchas (these have actually bitten)
 
-- **Never write `@param uuid:string="..."`.** That DSL doesn't match the generator's `@param` grammar *and* `@param` is a real PHPDoc tag, so IDEs/intelephense raise parse errors (P1129/P1133). Use `{param}` in the path (auto-derived) or the space-separated `@param` form above.
+- **For query params, prefer `@queryParam name:type="..."` over `@param name query type ...`.** The `name:type=` shape on the reserved `@param` tag trips IDE/intelephense `P1129`/`P1133` — that's exactly why the dedicated `@queryParam` tag exists (framework ≥ 1.50.2). For path params, don't write a tag at all — `{param}` in the route auto-derives. (On framework `< 1.50.2`, `@queryParam` isn't parsed; fall back to the space-separated `@param name query type bool "..."` form and accept the IDE warning.)
 - **File-level docblock: fully-qualify the `@var`** — `@var \Glueful\Routing\Router $router` (short `Router` trips PHPDoc tooling when the file has no `Router` usage in code).
 - **A route without `@route` is invisible** to the generator — every documented endpoint needs it.
 
@@ -174,5 +176,5 @@ $router->post('/articles/{id}/comments', [CommentController::class, 'store'])
 - [ ] Named middleware exists as a container service; custom middleware implements `RouteMiddleware`.
 - [ ] Path-param constraints via `->where(...)`; route named via `->name(...)`.
 - [ ] Optional/feature-flagged routes guarded with an `env()` early return.
-- [ ] Documented with `@route`/`@summary`/`@tag`/`@requestBody`/`@response` (envelope schema); `operationId` left to the generator. Path params auto-derive from `{param}` **only when there are no `@param` tags** — if any `@param` is present, declare path params explicitly too (`@param id path string true "…"`).
-- [ ] No malformed `@param name:type=...` lines; file-level `@var \Glueful\Routing\Router $router` fully qualified. Ran `generate:openapi` to confirm the endpoint appears.
+- [ ] Documented with `@route`/`@summary`/`@tag`/`@requestBody`/`@response` (envelope schema); `operationId` left to the generator. Query params use `@queryParam name:type="…" [{required}]` (framework ≥ 1.50.2); path params left to auto-derive from `{param}` (always merged as of 1.50.2).
+- [ ] No legacy `@param name query …` lines on framework ≥ 1.50.2 (use `@queryParam`); file-level `@var \Glueful\Routing\Router $router` fully qualified. Ran `generate:openapi` to confirm the endpoint appears.

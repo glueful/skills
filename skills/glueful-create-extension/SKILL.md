@@ -7,7 +7,7 @@ description: Create or modify a Glueful framework extension — the composer man
 
 A Glueful extension is a Composer package whose service provider extends `Glueful\Extensions\ServiceProvider`. Scaffold one with **`php glueful create:extension <name>`** (note the namespace order — it's `create:extension`, **not** `extensions:create`): it writes a full Composer package under `extensions/<slug>/` (a `composer.json` with `type: glueful-extension` + `extra.glueful.provider`, PSR-4, `src/`, `routes/`, `config/`, `database/migrations/`), registers a Composer **path repository** in the app's `composer.json`, and **prints** the `composer require … && php glueful extensions:enable …` commands to finish (it does not run Composer itself). Or build the manifest + provider by hand / copy an existing extension. DI bindings are returned from a **static `services()` array**, not registered imperatively à la Laravel.
 
-> **First, check the official catalog** (<https://glueful.com/extensions>). Build a custom extension only when no official one fits — RBAC (`glueful/aegis`), OAuth/SSO (`glueful/entrada`), email (`glueful/email-notification`), push (`glueful/notiva`), SMS/WhatsApp messaging (`glueful/conversa`), search (`glueful/meilisearch`), payments (`glueful/payvia`), and runtime concurrency (`glueful/runiva`) are already covered.
+> **First, check the official catalog** (<https://glueful.com/extensions>). Build a custom extension only when no official one fits — the user store / identity & accounts (`glueful/users` — the first-party `UserProviderInterface`), RBAC (`glueful/aegis`), OAuth/SSO (`glueful/entrada`), email (`glueful/email-notification`), push (`glueful/notiva`), SMS/WhatsApp messaging (`glueful/conversa`), search (`glueful/meilisearch`), payments (`glueful/payvia`), and runtime concurrency (`glueful/runiva`) are already covered.
 
 ## 1. The composer manifest
 
@@ -127,12 +127,14 @@ Each entry is `serviceId => definition`:
 
 Available to your provider:
 - `loadRoutesFrom(string $path)` — execute a route file (gets `$router` in scope).
-- `loadMigrationsFrom(string $dir)` — register a migrations directory.
+- `loadMigrationsFrom(string $dir, int $priority = MigrationPriority::DEFAULT, ?string $source = null)` — register a migrations directory. **Pass `$priority` and `$source` (framework ≥ 1.50):** `Glueful\Database\Migrations\MigrationPriority` tiers are `FOUNDATION` (-200), `IDENTITY` (-100, the `glueful/users` store), `DEFAULT` (0, the app), `DEPENDENT` (100). An extension whose tables reference the user store must register at `DEPENDENT` so it runs **after** identity/app migrations: `$this->loadMigrationsFrom(__DIR__.'/../migrations', MigrationPriority::DEPENDENT, 'glueful/yourext')`. The `$source` string tags the migrations in the `migrations` table's `source` column (two packages can ship the same filename without conflict; rollback resolves by `(source, migration)`).
 - `mergeConfig(string $key, array $defaults)` — merge extension config under a config key.
 - `discoverCommands(string $namespace, string $dir)` — auto-register `#[AsCommand]` classes under a dir.
 - `commands(array $classes)` — register CLI command classes explicitly.
 - `mountStatic(string $mount, string $dir)` — serve static assets at `/extensions/{mount}/`.
 - `loadMessageCatalogs(string $dir, string $domain = 'messages')` — register translation catalogs.
+
+> **No cross-package foreign keys to `users` (framework ≥ 1.50).** The concrete user store lives in the `glueful/users` extension, so an extension's tables must **not** declare a DB-level FK into `users`. Store the principal id as an indexed UUID column (`user_uuid`) with no `foreign()` constraint, and resolve users through `Glueful\Auth\UserProviderInterface` in code — not a join you own. (This is what lets the user store be swapped or absent.)
 
 ## CLI
 

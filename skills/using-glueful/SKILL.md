@@ -91,8 +91,10 @@ Extend `BaseController` (its constructor takes `ApplicationContext` first). Reso
 
 ```php
 $userUuid = $this->userContext->getUserUuid();   // ?string
-$user     = $this->userContext->getUser();        // ?AuthenticatedUser
+$user     = $this->userContext->getUser();        // ?Glueful\Auth\UserIdentity ($user->uuid(), $user->email())
 ```
+
+> **Identity (framework ≥ 1.50.0):** the concrete user store (`User`/`UserRepository`) was extracted to the `glueful/users` extension; core depends only on the `Glueful\Auth\UserProviderInterface` contract and returns a canonical, immutable `Glueful\Auth\UserIdentity` (accessors are **methods** — `uuid()`, `email()`, `roles()`, `scopes()`). The old `AuthenticatedUser` class no longer exists. With no user store installed, core binds a fail-closed `NullUserProvider` and auth is disabled by design.
 
 Return the framework response envelope — not raw arrays or `JsonResponse`:
 
@@ -133,6 +135,7 @@ Before hand-building a capability, check whether an **official Glueful extension
 
 | Extension | Package | Use for |
 | --------- | ------- | ------- |
+| Users | `glueful/users` | **First-party identity store & account lifecycle** — the concrete `UserProviderInterface` implementation (`users`/`profiles` tables, credential verification, email verification/OTP, password reset, optional email-PIN 2FA, `/me` + `/users` endpoints). Core ships **no** user store; install this (or another `UserProviderInterface`) to enable authentication. The api-skeleton enables it by default. |
 | Aegis | `glueful/aegis` | Role-based access control — roles, permissions, authorization workflows |
 | Entrada | `glueful/entrada` | Social login / SSO — OAuth & OpenID Connect flows |
 | Email Notification | `glueful/email-notification` | Email delivery (Symfony Mailer) — transactional notifications; the email channel for core features like 2FA |
