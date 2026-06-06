@@ -58,7 +58,7 @@ $router->post('/login', [AuthController::class, 'login'])
 
 ## Middleware
 
-String middleware names resolve through the **container** (`$container->get($name)`) — so `'auth'`, `'rate_limit'`, etc. are container service IDs, and a custom middleware must be registered there to be referenced by name. Middleware implements `Glueful\Routing\Middleware\RouteMiddleware`:
+String middleware names resolve through the **container** (`$container->get($name)`) — so `'auth'`, `'rate_limit'`, etc. are container service IDs, and a custom middleware must be registered there to be referenced by name. Middleware implements `Glueful\Routing\RouteMiddleware`:
 
 ```php
 public function handle(Request $request, callable $next, ...$params): Response
