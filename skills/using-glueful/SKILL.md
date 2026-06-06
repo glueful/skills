@@ -123,7 +123,7 @@ All events extend `Glueful\Events\Contracts\BaseEvent` and must call `parent::__
 
 ## Middleware
 
-Implement `Glueful\Routing\Middleware\RouteMiddleware`:
+Implement `Glueful\Routing\RouteMiddleware`:
 
 ```php
 public function handle(Request $request, callable $next, ...$params): Response
