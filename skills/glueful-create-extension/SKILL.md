@@ -18,7 +18,7 @@ The framework discovers extensions via `type` + `extra.glueful.provider`:
   "name": "glueful/widgets",
   "type": "glueful-extension",
   "autoload": { "psr-4": { "Glueful\\Extensions\\Widgets\\": "src/" } },
-  "require": { "glueful/framework": ">=1.47.0" },
+  "require": { "glueful/framework": ">=1.52.0" },
   "extra": {
     "glueful": {
       "name": "Widgets",
@@ -27,7 +27,7 @@ The framework discovers extensions via `type` + `extra.glueful.provider`:
       "version": "1.0.0",
       "provider": "Glueful\\Extensions\\Widgets\\WidgetsServiceProvider",
       "requires": {
-        "glueful": ">=1.47.0",
+        "glueful": ">=1.52.0",
         "extensions": []
       }
     }
@@ -51,6 +51,7 @@ The `extra.glueful.provider` FQCN is the entry point — without it the extensio
 namespace Glueful\Extensions\Widgets;
 
 use Glueful\Bootstrap\ApplicationContext;
+use Glueful\Database\Migrations\MigrationPriority;
 use Glueful\Extensions\ServiceProvider;
 
 class WidgetsServiceProvider extends ServiceProvider
@@ -92,7 +93,13 @@ class WidgetsServiceProvider extends ServiceProvider
         // Paths match the `create:extension` scaffold layout (see below):
         // provider in src/, routes in routes/, migrations in database/migrations/.
         $this->loadRoutesFrom(__DIR__ . '/../routes/routes.php');
-        $this->loadMigrationsFrom(__DIR__ . '/../database/migrations');
+        // Always pass the priority tier + a source tag (framework >= 1.50): DEFAULT is
+        // right unless your tables must run after the user store (MigrationPriority::DEPENDENT).
+        $this->loadMigrationsFrom(
+            __DIR__ . '/../database/migrations',
+            MigrationPriority::DEFAULT,
+            'glueful/widgets',
+        );
         $this->discoverCommands(__NAMESPACE__ . '\\Console', __DIR__ . '/Console');
 
         // Register metadata so extensions:list / extensions:info report it.
