@@ -11,7 +11,7 @@ This is the **placement and wiring map** for a non-trivial Glueful app — where
 
 ## Step 0 — reuse official extensions before building
 
-Before adding a layer, check whether an official extension already owns the capability (identity/accounts → `glueful/users`, RBAC → `glueful/aegis`, social/SSO → `glueful/entrada`, email → `glueful/email-notification`, push → `glueful/notiva`, search → `glueful/meilisearch`, payments → `glueful/payvia`, runtime → `glueful/runiva`, image processing → `glueful/media`, edge cache → `glueful/cdn`, queue supervision/autoscaling → `glueful/queue-ops`, table archiving → `glueful/archive`). Don't reimplement framework- or extension-provided endpoints (auth, RBAC, health, RESTful CRUD). See `using-glueful` → "Official extensions."
+Before adding a layer, check whether an official extension already owns the capability (identity/accounts → `glueful/users`, RBAC → `glueful/aegis`, row-level multi-tenancy → `glueful/tenancy`, social/SSO → `glueful/entrada`, email → `glueful/email-notification`, push → `glueful/notiva`, search → `glueful/meilisearch`, payments → `glueful/payvia`, runtime → `glueful/runiva`, image processing → `glueful/media`, edge cache → `glueful/cdn`, queue supervision/autoscaling → `glueful/queue-ops`, table archiving → `glueful/archive`). Don't reimplement framework- or extension-provided endpoints (auth, RBAC, health, RESTful CRUD). See `using-glueful` → "Official extensions."
 
 ## The layers
 

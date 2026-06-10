@@ -137,6 +137,7 @@ Before hand-building a capability, check whether an **official Glueful extension
 | --------- | ------- | ------- |
 | Users | `glueful/users` | **First-party identity store & account lifecycle** — the concrete `UserProviderInterface` implementation (`users`/`profiles` tables, credential verification, email verification/OTP, password reset, optional email-PIN 2FA, `/me` + `/users` endpoints). Core ships **no** user store; install this (or another `UserProviderInterface`) to enable authentication. The api-skeleton enables it by default. |
 | Aegis | `glueful/aegis` | Role-based access control — roles, permissions, authorization workflows |
+| Tenancy | `glueful/tenancy` | Shared-database, row-level multi-tenancy — tenant-owned tables (`tenant_uuid` + `BelongsToTenant`), automatic per-tenant scoping, memberships, resolution middleware, and explicit bypass APIs |
 | Entrada | `glueful/entrada` | Social login / SSO — OAuth & OpenID Connect flows |
 | Email Notification | `glueful/email-notification` | Email delivery (Symfony Mailer) — transactional notifications; the email channel for core features like 2FA |
 | Notiva | `glueful/notiva` | Push notifications — FCM, APNs, Web Push |
