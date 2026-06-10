@@ -7,7 +7,7 @@ description: Create or modify a Glueful framework extension — the composer man
 
 A Glueful extension is a Composer package whose service provider extends `Glueful\Extensions\ServiceProvider`. Scaffold one with **`php glueful create:extension <name>`** (note the namespace order — it's `create:extension`, **not** `extensions:create`): it writes a full Composer package under `extensions/<slug>/` (a `composer.json` with `type: glueful-extension` + `extra.glueful.provider`, PSR-4, `src/`, `routes/`, `config/`, `database/migrations/`), registers a Composer **path repository** in the app's `composer.json`, and **prints** the `composer require … && php glueful extensions:enable …` commands to finish (it does not run Composer itself). Or build the manifest + provider by hand / copy an existing extension. DI bindings are returned from a **static `services()` array**, not registered imperatively à la Laravel.
 
-> **First, check the official catalog** (<https://glueful.com/extensions>). Build a custom extension only when no official one fits — the user store / identity & accounts (`glueful/users` — the first-party `UserProviderInterface`), RBAC (`glueful/aegis`), OAuth/SSO (`glueful/entrada`), email (`glueful/email-notification`), push (`glueful/notiva`), SMS/WhatsApp messaging (`glueful/conversa`), search (`glueful/meilisearch`), payments (`glueful/payvia`), and runtime concurrency (`glueful/runiva`) are already covered.
+> **First, check the official catalog** (<https://glueful.com/extensions>). Build a custom extension only when no official one fits — the user store / identity & accounts (`glueful/users` — the first-party `UserProviderInterface`), RBAC (`glueful/aegis`), row-level multi-tenancy (`glueful/tenancy`), OAuth/SSO (`glueful/entrada`), email (`glueful/email-notification`), push (`glueful/notiva`), SMS/WhatsApp messaging (`glueful/conversa`), search (`glueful/meilisearch`), payments (`glueful/payvia`), runtime concurrency (`glueful/runiva`), image processing (`glueful/media`), edge cache / CDN (`glueful/cdn`), queue supervision / autoscaling (`glueful/queue-ops`), and table archiving (`glueful/archive`) are already covered.
 
 ## 1. The composer manifest
 
@@ -18,7 +18,7 @@ The framework discovers extensions via `type` + `extra.glueful.provider`:
   "name": "glueful/widgets",
   "type": "glueful-extension",
   "autoload": { "psr-4": { "Glueful\\Extensions\\Widgets\\": "src/" } },
-  "require": { "glueful/framework": ">=1.47.0" },
+  "require": { "glueful/framework": ">=1.52.0" },
   "extra": {
     "glueful": {
       "name": "Widgets",
@@ -27,7 +27,7 @@ The framework discovers extensions via `type` + `extra.glueful.provider`:
       "version": "1.0.0",
       "provider": "Glueful\\Extensions\\Widgets\\WidgetsServiceProvider",
       "requires": {
-        "glueful": ">=1.47.0",
+        "glueful": ">=1.52.0",
         "extensions": []
       }
     }
@@ -51,6 +51,7 @@ The `extra.glueful.provider` FQCN is the entry point — without it the extensio
 namespace Glueful\Extensions\Widgets;
 
 use Glueful\Bootstrap\ApplicationContext;
+use Glueful\Database\Migrations\MigrationPriority;
 use Glueful\Extensions\ServiceProvider;
 
 class WidgetsServiceProvider extends ServiceProvider
@@ -92,7 +93,13 @@ class WidgetsServiceProvider extends ServiceProvider
         // Paths match the `create:extension` scaffold layout (see below):
         // provider in src/, routes in routes/, migrations in database/migrations/.
         $this->loadRoutesFrom(__DIR__ . '/../routes/routes.php');
-        $this->loadMigrationsFrom(__DIR__ . '/../database/migrations');
+        // Always pass the priority tier + a source tag (framework >= 1.50): DEFAULT is
+        // right unless your tables must run after the user store (MigrationPriority::DEPENDENT).
+        $this->loadMigrationsFrom(
+            __DIR__ . '/../database/migrations',
+            MigrationPriority::DEFAULT,
+            'glueful/widgets',
+        );
         $this->discoverCommands(__NAMESPACE__ . '\\Console', __DIR__ . '/Console');
 
         // Register metadata so extensions:list / extensions:info report it.
@@ -122,6 +129,40 @@ Each entry is `serviceId => definition`:
 - `register(ApplicationContext)` runs for **every** provider first — do config merging here (`mergeConfig`), not route/command wiring.
 - `boot(ApplicationContext)` runs **after all** providers are registered — safe to load routes, register migrations, discover commands, and read other extensions' services.
 - In real extensions, `boot()` wraps each step in try/catch and logs (fail-fast in non-production) so one extension's failure doesn't abort the whole boot.
+
+## Activating an optional core capability (a "seam")
+
+Framework 1.52+ ships several optional capabilities as a **seam**: core declares a contract and binds a **no-op default**, and an extension *activates* the real behavior by binding its implementation to the **same interface id** from `services()`. Providers load in order with core first, so the extension's binding for that id **wins** (last-provider-wins). You don't reimplement the capability — you bind the interface; without the extension, core degrades to the no-op.
+
+| Core seam (contract) | Default with no extension | Bound by |
+| --- | --- | --- |
+| `Glueful\Uploader\Contracts\MediaProcessorInterface` | unbound → no-op upload path (no thumbnail, type-only metadata; `image()` undefined) | `glueful/media` |
+| `Glueful\Cache\Contracts\EdgeCacheInterface` | `Glueful\Cache\NullEdgeCache` | `glueful/cdn` |
+| `Glueful\Queue\Contracts\WorkerMonitorInterface` | `Glueful\Queue\Monitoring\NullWorkerMonitor` | `glueful/queue-ops` |
+
+```php
+use Glueful\Bootstrap\ApplicationContext;
+use Glueful\Container\Definition\FactoryDefinition;
+use Glueful\Cache\Contracts\EdgeCacheInterface;
+use Psr\Container\ContainerInterface;
+
+public static function services(): array
+{
+    return [
+        // Override core's no-op binding for this id — last-provider-wins.
+        EdgeCacheInterface::class => new FactoryDefinition(
+            EdgeCacheInterface::class,
+            static function (ContainerInterface $c): EdgeCachePurger {
+                $ctx = $c->get(ApplicationContext::class);
+                return new EdgeCachePurger($ctx, (array) config($ctx, 'cdn', []));
+            },
+            true, // shared
+        ),
+    ];
+}
+```
+
+A plain autowirable impl can use the array form (`EdgeCacheInterface::class => ['class' => Impl::class, 'shared' => true, 'autowire' => true]`); use a `FactoryDefinition` when the impl needs config or non-service constructor args — which the three extracted extensions do. This is how a lean core stays optional: install the extension to bind the real implementation, uninstall to fall back to the no-op default.
 
 ## ServiceProvider helper methods (verified)
 

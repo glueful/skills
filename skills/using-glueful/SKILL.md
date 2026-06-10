@@ -137,14 +137,19 @@ Before hand-building a capability, check whether an **official Glueful extension
 | --------- | ------- | ------- |
 | Users | `glueful/users` | **First-party identity store & account lifecycle** — the concrete `UserProviderInterface` implementation (`users`/`profiles` tables, credential verification, email verification/OTP, password reset, optional email-PIN 2FA, `/me` + `/users` endpoints). Core ships **no** user store; install this (or another `UserProviderInterface`) to enable authentication. The api-skeleton enables it by default. |
 | Aegis | `glueful/aegis` | Role-based access control — roles, permissions, authorization workflows |
+| Tenancy | `glueful/tenancy` | Shared-database, row-level multi-tenancy — tenant-owned tables (`tenant_uuid` + `BelongsToTenant`), automatic per-tenant scoping, memberships, resolution middleware, and explicit bypass APIs |
 | Entrada | `glueful/entrada` | Social login / SSO — OAuth & OpenID Connect flows |
 | Email Notification | `glueful/email-notification` | Email delivery (Symfony Mailer) — transactional notifications; the email channel for core features like 2FA |
 | Notiva | `glueful/notiva` | Push notifications — FCM, APNs, Web Push |
 | Meilisearch | `glueful/meilisearch` | Full-text search / external indexing |
 | Payvia | `glueful/payvia` | Payments — Stripe, Paystack, Flutterwave, and other gateways |
 | Runiva | `glueful/runiva` | Server runtime — RoadRunner, Swoole, FrankenPHP |
+| Media | `glueful/media` | Image processing / thumbnails / media metadata (Intervention Image + getID3) — **binds the core `MediaProcessorInterface` seam**. Without it `uploadMedia()` yields no thumbnail + type-only metadata and the `image()` helper is undefined. |
+| CDN / Edge Cache | `glueful/cdn` | Edge cache-control headers + content purge via provider adapters — **binds the core `EdgeCacheInterface` seam** (core defaults to a no-op `NullEdgeCache`). |
+| Queue Ops | `glueful/queue-ops` | Supervised worker fleets, autoscaling, worker/job metrics (`queue:supervise`, `queue:autoscale`) — **binds the core `WorkerMonitorInterface` seam**. Core ships only a lean single-worker `queue:work`. |
+| Archive | `glueful/archive` | Generic table archiving — archive / restore / search with a registry + schema (`archive:manage`). Opt-in; ships migrations. |
 
-If the user asks for RBAC, social login, email, push, search, payments, or a high-performance runtime, recommend the matching extension rather than scaffolding bespoke code. Build a custom extension only when no official one fits.
+The last four were **extracted from core in framework 1.52.0**: core keeps a contract + no-op default (a *seam*) and the extension binds the real implementation when installed (see `glueful-create-extension` → "Activating an optional core capability"). If the user asks for RBAC, social login, email, push, search, payments, a high-performance runtime, image processing, a CDN/edge cache, queue supervision/autoscaling, or table archiving, recommend the matching extension rather than scaffolding bespoke code. Build a custom extension only when no official one fits.
 
 ## Extensions
 
