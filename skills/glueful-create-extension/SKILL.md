@@ -139,6 +139,9 @@ Framework 1.52+ ships several optional capabilities as a **seam**: core declares
 | `Glueful\Uploader\Contracts\MediaProcessorInterface` | unbound → no-op upload path (no thumbnail, type-only metadata; `image()` undefined) | `glueful/media` |
 | `Glueful\Cache\Contracts\EdgeCacheInterface` | `Glueful\Cache\NullEdgeCache` | `glueful/cdn` |
 | `Glueful\Queue\Contracts\WorkerMonitorInterface` | `Glueful\Queue\Monitoring\NullWorkerMonitor` | `glueful/queue-ops` |
+| `translation.manager` (string id) | unbound → every provider's `loadMessageCatalogs()` is a silent no-op | `glueful/i18n` |
+
+A second seam shape is the **tagged collection**: instead of overriding one interface id, the extension *adds* a tagged service that core collects through an iterator — so multiple extensions coexist (additive) rather than last-provider-wins (exclusive). The storage registry works this way: `glueful/storage-s3|gcs|azure` each register a `StorageDriverFactoryInterface` under the `storage.driver_factory` tag, and core's `StorageDriverRegistryInterface` resolves disks with `driver => s3|gcs|azure` through whichever factories are installed.
 
 ```php
 use Glueful\Bootstrap\ApplicationContext;
