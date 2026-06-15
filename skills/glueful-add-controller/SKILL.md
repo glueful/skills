@@ -73,7 +73,7 @@ throw ValidationException::forField('email', 'Email address is required');
 throw ValidationException::forFields(['email' => '...', 'password' => '...']);
 ```
 
-Or validate through a DTO (`SomeDTO::from($data)` throws `ValidationException` on failure) — see the framework's `*DTO` classes for the attribute-based rule pattern.
+Or validate through a DTO — either a manual `Validator` DTO (`SomeDTO::from($data)` throws `ValidationException`; see `glueful-build-validation-dto`) or, for a fixed JSON body, a typed **`RequestData`** parameter that the router hydrates + validates for you and auto-`422`s on failure (see *Typed request/response DTOs* below).
 
 ## Resolving the authenticated user
 
@@ -99,6 +99,46 @@ Two equivalent surfaces — both return `Glueful\Http\Response`:
 The envelope is `{success, message, data}`. Don't return raw arrays or build a `Symfony\…\Response`/`JsonResponse` by hand.
 
 **Type your action return as `Response`.** The project runs `phpstan-strict-rules`, which requires explicit return types on new code. If an action returns heterogeneous response subtypes, the common base is `Glueful\Http\Response` (it extends Symfony's response). Avoid reaching for raw `Symfony\…\Response` just to emit a bodiless 204 — prefer the framework envelope for API consistency; if you genuinely need a 204, `Response::success(null, '…')->setStatusCode(204)` keeps the framework type.
+
+## Typed request/response DTOs (auto-documented; framework ≥ 1.57.0)
+
+Beside the manual `Request` / `RequestHelper::getRequestData()` / `Response::success()` pattern above, an action can take a **typed `RequestData` parameter** and/or return a **typed `ResponseData`** — the router hydrates, validates, and envelopes them for you, and the reflect OpenAPI generator derives the request/response schema straight from the types (no annotation). Prefer this for fixed, flat, statically-typed payloads.
+
+```php
+use Glueful\Validation\Contracts\RequestData;
+use Glueful\Validation\Attributes\Rule;
+use Glueful\Http\Contracts\ResponseData;
+use Glueful\Routing\Attributes\ResponseStatus;
+
+final class CreateWidgetData implements RequestData
+{
+    public function __construct(
+        #[Rule('required|string|max:120')] public readonly string $name,
+        #[Rule('string|in:active,archived')] public readonly string $status = 'active',
+    ) {}
+}
+
+final class WidgetData implements ResponseData
+{
+    public function __construct(
+        public readonly string $uuid,
+        public readonly string $name,
+    ) {}
+}
+
+#[ResponseStatus(201)]
+public function store(CreateWidgetData $input): WidgetData    // no Request param, no Response::created()
+{
+    $w = $this->widgets->create($this->getContext(), ['name' => $input->name, 'status' => $input->status]);
+    return new WidgetData($w['uuid'], $w['name']);            // auto-enveloped → {success, message, data}
+}
+```
+
+- **`RequestData` param** — decoded from the JSON body, validated against its `#[Rule]` constraints, injected typed; a failure auto-returns the standard `422`. JSON keys bind to constructor params **by exact name** (no snake/camel conversion). Keep v1 DTOs flat (scalar fields, each with a `#[Rule]`, defaultable or nullable).
+- **`ResponseData` return** — serialized and wrapped in the `{success, message, data}` envelope automatically; `#[ResponseStatus(2xx)]` sets the status; implement `Glueful\Http\Contracts\HasResponseMessage` to supply a custom envelope `message`. Lists use `Glueful\Http\Responses\CollectionResponse` / `PaginatedResponse`. A returned `JsonResource`/`ResourceCollection` is auto-normalized through its own `toResponse()`.
+- **Stay manual** (the pattern at the top of this skill) for: polymorphic/varying bodies, multipart/base64 input, binary/stream responses, or responses that set their own headers (caching/ETag). Document those with `#[ApiResponse]`/`#[ApiRequestBody]` (see `glueful-add-route`).
+
+Details: framework `docs/REQUEST_DTOS.md`, `docs/RESPONSE_DTOS.md`; for the manual-validation `Validator` DTO see `glueful-build-validation-dto`.
 
 ## Wiring the controller to a route
 
@@ -137,5 +177,5 @@ final class WidgetController extends BaseController
 - [ ] Dependencies declared as typed constructor params (container auto-wires them).
 - [ ] Input read via `RequestHelper::getRequestData($request)`; validated via `ValidationException`/DTO.
 - [ ] Authenticated user via `$this->userContext`, not `$request->getUser()`.
-- [ ] Returns the `Response` envelope (`$this->success(...)` / `Response::success(...)`); action typed `: Response`.
+- [ ] Returns the `Response` envelope (`$this->success(...)` / `Response::success(...)`); action typed `: Response`. (Or returns a typed `ResponseData`/`CollectionResponse`/`PaginatedResponse` for auto-enveloping + auto-OpenAPI.)
 - [ ] Wired to a route (route file or `#[Controller]`/`#[Get]`… attributes).

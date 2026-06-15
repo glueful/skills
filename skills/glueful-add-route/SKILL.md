@@ -1,6 +1,6 @@
 ---
 name: glueful-add-route
-description: Register or modify routes in a Glueful framework project — the fluent router (get/post/put/delete, groups, where constraints), attribute routing, middleware, rate limiting, and the OpenAPI docblock annotations (@route/@summary/@requestBody/@response) that generate the API spec/SDK. Use when adding or documenting API endpoints in a Glueful app. Glueful routing is NOT Laravel — there is no Route facade; route files receive a $router instance, rate limits must use the builder method (not a middleware string), and docs come from route docblocks.
+description: Register or modify routes in a Glueful framework project — the fluent router (get/post/put/delete, groups, where constraints), attribute routing, middleware, rate limiting, and OpenAPI documentation via the reflect generator (typed #[ApiOperation]/#[QueryParam]/#[ApiRequestBody]/#[ApiResponse] attributes on the controller method, plus typed RequestData/ResponseData DTOs). Use when adding or documenting API endpoints in a Glueful app. Glueful routing is NOT Laravel — there is no Route facade; route files receive a $router instance, rate limits must use the builder method (not a middleware string), and (framework ≥ 1.57.0) OpenAPI docs come from typed attributes/types, NOT route docblocks.
 ---
 
 # Adding a Glueful Route
@@ -99,9 +99,9 @@ final class WidgetController extends BaseController
 
 `#[Fields(allowed: [...], strict: true)]` declares field-selection whitelists; `#[RequireScope(...)]` is repeatable and gates by API-key scope.
 
-## OpenAPI doc annotations
+## OpenAPI docs — the reflect generator (framework ≥ 1.57.0)
 
-Glueful generates its OpenAPI spec from **docblock annotations above each route** (parsed by `CommentsDocGenerator`). Build the spec with `php glueful generate:openapi`, then generate an SDK — `generate:client` takes a **required language argument**:
+As of framework **1.57.0** the OpenAPI spec is built by the **reflect generator** from the **live route table + PHP types + typed attributes on the controller method** — *not* from route docblocks. The old docblock tags (`@route`, `@summary`, `@requestBody`, `@response`, `@queryParam`, the space-separated `@param`) and the `CommentsDocGenerator` were **removed**: any such blocks are now inert and silently ignored, and the `documentation.generator` / `API_DOCS_GENERATOR` switches no longer exist (reflect is the only generator). Build the spec and an SDK exactly as before:
 
 ```bash
 php glueful generate:openapi
@@ -109,58 +109,41 @@ php glueful generate:client typescript --spec openapi.json -o ./generated   # la
 # languages: typescript|ts, python, go, ruby, java, … ; --spec defaults to openapi.json, -o to ./generated
 ```
 
-Annotate routes as you add them — the generated docs/SDK are only as good as these blocks.
+### What is inferred automatically — no annotation needed
 
-### The tags (exact grammar)
+The generator derives, with **zero** annotation: the path, HTTP method, and `{param}` path params (with the `->where()` regex as `pattern`); `security` from `auth`/`api_key` middleware; a `429` from `rate_limit`; scope prose from `require_scope`; the `fields`/`expand` query params from `#[Fields]`; the **request-body schema** from a typed `RequestData` parameter (plus an auto `422`); and the **success-response schema** from a `ResponseData` / `CollectionResponse` / `PaginatedResponse` return type. In practice **~95% of routes need no annotation at all** — the types are the docs.
+
+> **Type-first rule:** the cleanest way to document an endpoint is to *type* it. A `RequestData` param and a `ResponseData` return need no annotation — the schema is reflected from the class. See `glueful-build-validation-dto` and `glueful-add-controller` for the typed-I/O DTOs.
+
+### Annotate only what types can't express — on the controller METHOD
+
+The override attributes live in `Glueful\Routing\Attributes\` and go on the **handler method** (not the route file). Every one is optional and additive — omitting it leaves the inferred value unchanged.
 
 ```php
-/**
- * @route POST /articles/{id}/comments
- * @summary Add Comment
- * @description Adds a comment to an article.
- * @tag Comments
- * @requiresAuth true
- * @requestBody body:string="Comment text" parent_id:string="Parent comment UUID" {required=body}
- * @response 201 application/json "Comment created" {
- *   success:boolean="true",
- *   message:string="Success message",
- *   data:{
- *     id:string="Comment UUID",
- *     body:string="Comment text",
- *     created_at:string="ISO timestamp"
- *   }
- * }
- * @response 401 "Authentication required"
- * @response 422 "Validation failed"
- */
-$router->post('/articles/{id}/comments', [CommentController::class, 'store'])
-    ->where('id', '\d+')->middleware(['auth']);
+use Glueful\Routing\Attributes\{Post, ApiOperation, QueryParam, ApiRequestBody, ApiResponse};
+
+#[Post('/articles/{id}/comments')]
+#[ApiOperation(summary: 'Add Comment', description: 'Adds a comment to an article.', tags: ['Comments'])]
+#[QueryParam('preview', 'boolean', description: 'Render but do not persist')]
+#[ApiRequestBody(schema: CreateCommentData::class)]          // typed DTO class → JSON body schema
+#[ApiResponse(201, CommentData::class, description: 'Comment created')]
+#[ApiResponse(422, description: 'Validation failed')]
+public function store(Request $request, int $id): Response { /* ... */ }
 ```
 
-- **`@route METHOD /path`** — required; the parser keys off this (regex `@route\s+([A-Z]+)\s+(\S+)`). No `@route`, no operation.
-- **`@summary` / `@description` / `@tag`** — free text; `@tag` groups operations in the spec (use a consistent tag like `Articles`).
-- **`@requiresAuth true`** — marks the operation as secured.
-- **`@requestBody`** — space-separated `field:type="description"` tokens; enums as `field:type[a,b,c]="..."`; mark required with a trailing `{required=field1,field2}`. May span multiple lines.
-- **`@response CODE [contentType] "description" { schema }`** — `contentType` defaults to `application/json`; the optional `{ schema }` uses the same `field:type="desc"` syntax and nests with `field:{ ... }`. Omit the schema for simple statuses (`@response 401 "Unauthorized"`). Document the `{success, message, data}` envelope shape your controller returns.
+- **`#[ApiOperation(summary, description, tags, operationId, deprecated)]`** — prose. A non-empty `summary`/`tags` replaces the value derived from the route name/path; `operationId` is otherwise generated for you (don't hand-write one).
+- **`#[QueryParam(name, type='string', description='', required=false, format=null, enum=null)]`** (repeatable) — one per query parameter. `type ∈ string|integer|number|boolean`. Path params auto-derive from `{param}`; `fields`/`expand` come from `#[Fields]` — don't redeclare those.
+- **`#[ApiRequestBody(...)]`** — document a body the generator can't infer from a *hydrating* `RequestData` param. `schema: SomeData::class` is a typed DTO **class** for a JSON body (never an inline JSON schema). For a non-JSON/multipart body use `inlineSchema: [...]` with a non-JSON `contentType` (e.g. `'multipart/form-data'`) — `inlineSchema` is rejected for `application/json`.
+- **`#[ApiResponse(status, schema=null, description='', collection=false, envelope=true, contentType=..., body=null)]`** (repeatable) — declare a response by status. `schema` is a typed DTO class (`collection: true` wraps it as a list); `body: 'binary'|'text'` documents a file/HTML/stream response with no DTO. **4xx/error responses are never inferred — declare them here.**
 
-### Parameters
-
-- **Query params — use `@queryParam` (framework ≥ 1.50.2):** `@queryParam NAME:TYPE="description"`, with an optional trailing `{required}`. This is the **editor-clean, preferred** form — it isn't a reserved PHPDoc tag, so IDEs/intelephense don't mis-read the tokens as types (the `P1133` warnings the old `@param` form caused).
-  ```
-  @queryParam page:integer="Page number"
-  @queryParam q:string="Search term" {required}
-  ```
-  `TYPE` ∈ `string|integer|number|boolean|array|object`. Default is optional; add `{required}` to mark it required.
-- **Path params auto-derive from `{param}` — always.** As of framework 1.50.2 the generator *always* derives `{name}` path params from the route URL (type `string`, required) and **merges** them with any documented params, de-duplicating by name. So you normally write **no** param line for path params at all — just `{id}` in the path documents `id`. (An explicit declaration still wins if you need a richer type/description.)
-  > **Pre-1.50.2 caveat:** older framework versions auto-derived path params *only when no param tags were present at all*, so a route mixing a query param with a `{id}` would drop the path param. If the project pins framework `< 1.50.2`, either declare the path param explicitly or upgrade.
-- **Legacy `@param` form (still parsed):** `@param NAME (path|query|header|cookie) TYPE (true|false) "description"` — space-separated. Still works, but overloading the reserved `@param` tag trips IDE `P1133`/`P1129` warnings; prefer `@queryParam` for query params and `{param}` auto-derivation for path params.
-- **operationId is generated for you** (`OperationIdGenerator` makes a unique camelCase id from the method + path) — don't hand-write one.
+Full reference (in the framework package): `docs/OPENAPI_REFLECT.md`, `docs/REQUEST_DTOS.md`, `docs/RESPONSE_DTOS.md`.
 
 ### Gotchas (these have actually bitten)
 
-- **For query params, prefer `@queryParam name:type="..."` over `@param name query type ...`.** The `name:type=` shape on the reserved `@param` tag trips IDE/intelephense `P1129`/`P1133` — that's exactly why the dedicated `@queryParam` tag exists (framework ≥ 1.50.2). For path params, don't write a tag at all — `{param}` in the route auto-derives. (On framework `< 1.50.2`, `@queryParam` isn't parsed; fall back to the space-separated `@param name query type bool "..."` form and accept the IDE warning.)
+- **Docs moved from the route file to the controller method.** Pre-1.57.0 projects put `@route`/`@response` blocks above the `$router->...` call; those are now dead. Put `#[ApiOperation]`/`#[QueryParam]`/`#[ApiResponse]` on the **handler method** instead (alongside `#[Get]`/`#[Post]` if you use attribute routing).
+- **A typed DTO beats an attribute.** Don't hand-write an `#[ApiRequestBody]`/`#[ApiResponse]` schema for a handler that already takes a `RequestData` param or returns a `ResponseData` — the generator already has it, and the attribute would just risk drifting from the real type.
+- **No inline JSON request schema.** JSON bodies are expressed as a DTO **class** (`schema: …`); `inlineSchema` is for non-JSON only. This is deliberate — it keeps request shapes type-checked.
 - **File-level docblock: fully-qualify the `@var`** — `@var \Glueful\Routing\Router $router` (short `Router` trips PHPDoc tooling when the file has no `Router` usage in code).
-- **A route without `@route` is invisible** to the generator — every documented endpoint needs it.
 
 ## Not-Laravel reminders
 
@@ -168,6 +151,7 @@ $router->post('/articles/{id}/comments', [CommentController::class, 'store'])
 - No `->middleware('throttle:60,1')` for rate limits → `->rateLimit(60, 1)` builder + attach `'rate_limit'`.
 - No `Route::resource(...)` → register verbs explicitly, or use `#[Controller]` + verb attributes.
 - Route model binding is not automatic → resolve the entity in the controller from the typed `{id}` argument.
+- No `@route`/`@response` docblocks for OpenAPI (framework ≥ 1.57.0) → typed attributes on the controller method + typed DTOs.
 
 ## Checklist
 
@@ -176,5 +160,5 @@ $router->post('/articles/{id}/comments', [CommentController::class, 'store'])
 - [ ] Named middleware exists as a container service; custom middleware implements `RouteMiddleware`.
 - [ ] Path-param constraints via `->where(...)`; route named via `->name(...)`.
 - [ ] Optional/feature-flagged routes guarded with an `env()` early return.
-- [ ] Documented with `@route`/`@summary`/`@tag`/`@requestBody`/`@response` (envelope schema); `operationId` left to the generator. Query params use `@queryParam name:type="…" [{required}]` (framework ≥ 1.50.2); path params left to auto-derive from `{param}` (always merged as of 1.50.2).
-- [ ] No legacy `@param name query …` lines on framework ≥ 1.50.2 (use `@queryParam`); file-level `@var \Glueful\Routing\Router $router` fully qualified. Ran `generate:openapi` to confirm the endpoint appears.
+- [ ] OpenAPI: prefer typing the endpoint (a `RequestData` param / `ResponseData` return needs no annotation). Add `#[ApiOperation]`/`#[QueryParam]`/`#[ApiRequestBody]`/`#[ApiResponse]` on the **controller method** only for prose, query params, manual bodies, error codes, or non-JSON responses.
+- [ ] No legacy `@route`/`@summary`/`@requestBody`/`@response`/`@queryParam` docblocks (inert on framework ≥ 1.57.0); file-level `@var \Glueful\Routing\Router $router` fully qualified. Ran `generate:openapi` to confirm the endpoint appears with the expected summary/params/responses.

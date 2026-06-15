@@ -7,6 +7,15 @@ description: Validate and normalize request input with a Glueful DTO — a final
 
 A DTO validates and normalizes request input **at the edge of a use case**, so controllers stay thin and validation doesn't drift across endpoints (`glueful-architect-app`). It's a `final` class with a readonly constructor (the validated fields) and a static factory that runs the framework `Validator`, throws `ValidationException` on failure, and constructs from the **sanitized** values.
 
+## Two DTO styles — pick by need
+
+Glueful has **two** request-DTO styles; this skill covers the first:
+
+- **Manual `Validator` DTO (this skill).** A `final` class + static factory that runs the `Validator` (Rule objects) and builds from `filtered()`. Reach for it when you need **mutating sanitization** (`Sanitize` trim/strip), **cross-field** rules, custom `Rule` classes, or array/nested shaping the type system can't express. You call the factory explicitly in the controller.
+- **Typed `RequestData` DTO (framework ≥ 1.57.0).** A class implementing `Glueful\Validation\Contracts\RequestData` with `#[Rule('required|string|max:200')]`-style constraints on its promoted constructor params. The **router** decodes the JSON body, validates, and injects it typed — no factory call — and auto-returns `422` on failure; the reflect OpenAPI generator also derives the request schema from it. Best for **fixed, flat, scalar** bodies where one class should drive both validation and the API docs. (Keep v1 ones flat — scalar fields, each with a `#[Rule]`, defaultable or nullable.) See `glueful-add-controller` and framework `docs/REQUEST_DTOS.md`.
+
+Rule of thumb: start with the typed `RequestData` for a simple body (free hydration + OpenAPI); switch to the `Validator` DTO below when you outgrow it (sanitization, nested/array fields, cross-field logic).
+
 ## Define the DTO
 
 ```php
@@ -123,6 +132,7 @@ Use it like any built-in: `'username' => [new Required(), new Length(3, 30), new
 
 ## Checklist
 
+- [ ] Chose the right style: a typed `RequestData` DTO for a simple flat body (auto-hydration + auto-OpenAPI), or this manual `Validator` DTO when you need sanitization, nested/array, cross-field, or custom rules.
 - [ ] DTO is a `final` class with a readonly constructor of the validated fields + a static `fromRequest()`/`from()` factory.
 - [ ] Factory builds a `Validator([field => [Rule...]])`, throws `ValidationException($errors)` when `validate()` returns a non-empty map.
 - [ ] DTO constructed from `$validator->filtered()` (sanitized values), not raw input.

@@ -138,6 +138,13 @@ php glueful queue:work            # process queued jobs
 
 **Job payloads must be serializable data** — pass scalars/arrays (uuids, ids), not live objects/models. The job re-fetches what it needs in `handle()`.
 
+### Queue security (framework > 1.55)
+
+Two hardening behaviors to know:
+
+- **Handler classes must implement `JobInterface`.** Extending `Glueful\Queue\Job` satisfies this (do that). A plain class that just happens to have a `handle()` method **used to work and is now refused** at dequeue — the worker logs "Refusing to run" and fails the job. Same gate applies to scheduler `handler_class` entries.
+- **Persisted payloads are HMAC-signed with `APP_KEY`** (default on; verified before any handler code runs). Practical consequences: set `APP_KEY` in any environment that runs workers (signing is inert without it); never hand-edit queue/scheduler rows in the database — the signature breaks and the job is terminally failed; when upgrading a deployment with pre-signing rows still queued, set `QUEUE_REQUIRE_SIGNED_PAYLOADS=false` temporarily while they drain.
+
 ## Sync vs async — what goes where
 
 - **In the subscriber (synchronous, in the request path):** cheap, fast, must-happen-now work (set a flag, dispatch a follow-on event).
@@ -152,6 +159,7 @@ If a side effect can fail or take time, it belongs in a job, not inline — othe
 - **`getSubscribedEvents()` maps `EventClass::class => 'methodName'`**; the handler method name must match exactly and accept the event.
 - **Jobs carry data, not objects** — push uuids/arrays; re-load in `handle()`.
 - **Retries/timeout are methods, not properties** — override `getMaxAttempts()`/`getTimeout()`; a `protected $maxAttempts` property is silently ignored (the base getters return `3`/`60`).
+- **Don't "simplify" a job to a plain `handle()` class** — handler resolution requires `JobInterface` (framework > 1.55); extend `Glueful\Queue\Job`.
 - **Events are dispatched from services**, not controllers (keeps HTTP thin).
 
 ## Checklist
