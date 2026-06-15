@@ -11,10 +11,16 @@ A DTO validates and normalizes request input **at the edge of a use case**, so c
 
 Glueful has **two** request-DTO styles; this skill covers the first:
 
-- **Manual `Validator` DTO (this skill).** A `final` class + static factory that runs the `Validator` (Rule objects) and builds from `filtered()`. Reach for it when you need **mutating sanitization** (`Sanitize` trim/strip), **cross-field** rules, custom `Rule` classes, or array/nested shaping the type system can't express. You call the factory explicitly in the controller.
-- **Typed `RequestData` DTO (framework ≥ 1.57.0).** A class implementing `Glueful\Validation\Contracts\RequestData` with `#[Rule('required|string|max:200')]`-style constraints on its promoted constructor params. The **router** decodes the JSON body, validates, and injects it typed — no factory call — and auto-returns `422` on failure; the reflect OpenAPI generator also derives the request schema from it. Best for **fixed, flat, scalar** bodies where one class should drive both validation and the API docs. (Keep v1 ones flat — scalar fields, each with a `#[Rule]`, defaultable or nullable.) See `glueful-add-controller` and framework `docs/REQUEST_DTOS.md`.
+- **Manual `Validator` DTO (this skill).** A `final` class + static factory that runs the `Validator` (Rule objects) and builds from `filtered()`. Its remaining niche after request-DTO **v2**: **mutating sanitization** (`Sanitize` trim/strip — `RequestData` validates but never mutates input) and bespoke shaping a `#[Rule]` string + `ValidatesSelf` can't express. You call the factory explicitly in the controller.
+- **Typed `RequestData` DTO (framework ≥ 1.57.0; **v2** in ≥ 1.58.0).** A class implementing `Glueful\Validation\Contracts\RequestData` with `#[Rule('required|string|max:200')]` constraints on its promoted constructor params. The **router** decodes the request, validates, and injects it typed — no factory call — auto-`422` on failure; the reflect OpenAPI generator derives the request schema from it. **v2 (1.58.0) closes the old flat-scalar limits:**
+  - **arrays & nested DTOs** via `#[ArrayOf('int')]` (scalars) / `#[ArrayOf(ItemData::class)]` (nested `RequestData`) — recursive, with dot-path `422`s like `schema.0.name`, **never a `TypeError`/500**;
+  - **path/query inputs** via `#[FromRoute]` / `#[FromQuery]` (body is the default; one source per field);
+  - **cross-field invariants** via the `ValidatesSelf` contract (`validate(): array`, merged into the `422`);
+  - **app-registered custom rules** via `RuleRegistry`, used by name in `#[Rule('required|reserved_username')]`.
 
-Rule of thumb: start with the typed `RequestData` for a simple body (free hydration + OpenAPI); switch to the `Validator` DTO below when you outgrow it (sanitization, nested/array fields, cross-field logic).
+  See `glueful-add-controller` and framework `docs/REQUEST_DTOS.md`.
+
+Rule of thumb: reach for the typed `RequestData` DTO **by default** — since v2 it handles arrays, nested DTOs, path/query sources, and cross-field rules. Drop to the manual `Validator` DTO below only when you need **mutating sanitization** (it transforms the value; `RequestData` does not) or shaping that `#[Rule]` + `ValidatesSelf` can't express.
 
 ## Define the DTO
 
@@ -132,7 +138,7 @@ Use it like any built-in: `'username' => [new Required(), new Length(3, 30), new
 
 ## Checklist
 
-- [ ] Chose the right style: a typed `RequestData` DTO for a simple flat body (auto-hydration + auto-OpenAPI), or this manual `Validator` DTO when you need sanitization, nested/array, cross-field, or custom rules.
+- [ ] Chose the right style: a typed `RequestData` DTO by default (v2 handles arrays/nested via `#[ArrayOf]`, path/query via `#[FromRoute]`/`#[FromQuery]`, cross-field via `ValidatesSelf`, custom rules via `RuleRegistry`), or this manual `Validator` DTO when you need mutating sanitization or shaping rules can't express.
 - [ ] DTO is a `final` class with a readonly constructor of the validated fields + a static `fromRequest()`/`from()` factory.
 - [ ] Factory builds a `Validator([field => [Rule...]])`, throws `ValidationException($errors)` when `validate()` returns a non-empty map.
 - [ ] DTO constructed from `$validator->filtered()` (sanitized values), not raw input.
