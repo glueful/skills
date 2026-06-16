@@ -12,6 +12,8 @@ Glueful migrations are plain classes implementing `Glueful\Database\Migrations\M
 The migration *infrastructure* is in `src/Database/Migrations/`. **App** migrations live in the **consumer app** (e.g. api-skeleton's `database/migrations/`), numbered sequentially: `001_CreateInitialSchema.php`, `010_AddTwoFactorEnabledToUsers.php`, etc.
 
 > **Framework & extensions also own schema now (≥ 1.50).** The framework ships its own foundation migrations for the tables its code reads/writes (`auth_sessions`, `auth_refresh_tokens`, `api_keys`, plus config-gated capability tables — queue, scheduler, notifications, metrics, locks, uploads), and extensions ship theirs (since 1.52 `glueful/archive` owns the archive tables and `glueful/queue-ops` the worker/job-metrics tables — both extracted from core). Pending migrations from all sources run as one ordered stream sorted by **`MigrationPriority`** (`FOUNDATION` -200 → `IDENTITY` -100 → `DEFAULT` 0 → `DEPENDENT` 100) then filename, and the `migrations` table has a **`source`** column so two packages can ship the same filename without conflict. App migrations are `DEFAULT`; an extension whose tables reference the user store registers at `DEPENDENT` (see `glueful-create-extension`). **Don't add a DB-level foreign key into `users`** — the user store is a swappable extension (`glueful/users`); use an indexed `user_uuid` UUID column with no `foreign()` constraint.
+>
+> Extension migration directories must be registered from the provider's `boot()` method with `loadMigrationsFrom($dir, $priority, $source)`, not from `register()`. `register()` is for config defaults; `boot()` is the lifecycle where the CLI migration runner and the HTTP app see all providers consistently. Preserve any config gate, but put the `loadMigrationsFrom()` call itself in `boot()`.
 
 ```bash
 php glueful migrate:create <name>   # scaffold a new migration
@@ -131,4 +133,5 @@ public function down(SchemaBuilderInterface $schema): void
 - [ ] Columns/indexes written explicitly via the schema builder (no Laravel sugar, no raw SQL).
 - [ ] `down()` actually reverses `up()`.
 - [ ] For `alterTable`, used the no-callback form + `gc_collect_cycles()` + `execute()`/`$schema->execute()` for cross-version safety.
+- [ ] For extension migrations, the provider calls `loadMigrationsFrom()` from `boot()` with an explicit `MigrationPriority` and source tag.
 - [ ] `migrate:run` and `migrate:rollback` both verified clean.

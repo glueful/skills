@@ -160,7 +160,7 @@ Media, CDN, Queue Ops, and Archive were **extracted from core in framework 1.52.
 
 ## Extensions
 
-Extend `Glueful\Extensions\ServiceProvider`. `static services(): array` returns DI definitions; `register()` does config merging (`mergeConfig`); `boot()` runs after all providers and wires routes/migrations/commands (`loadRoutesFrom`, `loadMigrationsFrom`, `discoverCommands`). Discovery is via the package's composer `extra.glueful.provider`. Scaffold a new one with `php glueful create:extension <name>` (note: `create:extension`, **not** `extensions:create`); manage installed ones with `extensions:enable|disable|list|info|diagnose`.
+Extend `Glueful\Extensions\ServiceProvider`. `static services(): array` returns DI definitions; `register()` is for lightweight provider registration only, especially config defaults (`mergeConfig`). Runtime wiring belongs in `boot()`, after all providers are registered: routes (`loadRoutesFrom`), migrations (`loadMigrationsFrom`), commands (`discoverCommands`/`commands`), event listeners, catalogs, notification channels, and metadata registration. Do not load extension routes or migrations from `register()`; CLI/app boot paths can miss them or run before other providers are ready. Discovery is via the package's composer `extra.glueful.provider`. Scaffold a new one with `php glueful create:extension <name>` (note: `create:extension`, **not** `extensions:create`); manage installed ones with `extensions:enable|disable|list|info|diagnose`.
 
 ## CLI
 
