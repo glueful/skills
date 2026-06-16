@@ -7,6 +7,8 @@ description: Register or modify routes in a Glueful framework project — the fl
 
 Routes are registered against a `$router` instance (`Glueful\Routing\Router`), not a `Route::` facade. Route files live in `routes/*.php` and are loaded via `RouteManifest`.
 
+For extensions, route files are runtime wiring: load them from the extension provider's `boot()` method with `loadRoutesFrom()`, not from `register()`. Keep any config gate intact, but evaluate it in `boot()` so route registration follows the same lifecycle as migrations, commands, event listeners, and other extension runtime wiring.
+
 ## Route files & the manifest
 
 ```php
@@ -156,6 +158,7 @@ Full reference (in the framework package): `docs/OPENAPI_REFLECT.md`, `docs/REQU
 ## Checklist
 
 - [ ] Registered on `$router` in a `routes/*.php` file (added to `RouteManifest` if it's a framework route), or via `#[Controller]`/verb attributes.
+- [ ] If this route belongs to an extension, its provider loads the route file from `boot()` via `loadRoutesFrom()`, not `register()`.
 - [ ] Rate limits use `->rateLimit($attempts, $perMinutes)` (builder), not the `rate_limit:N,W` string form.
 - [ ] Named middleware exists as a container service; custom middleware implements `RouteMiddleware`.
 - [ ] Path-param constraints via `->where(...)`; route named via `->name(...)`.

@@ -126,8 +126,9 @@ Each entry is `serviceId => definition`:
 ## Lifecycle: `register()` → `boot()`
 
 - `static services()` is collected at container-compile time.
-- `register(ApplicationContext)` runs for **every** provider first — do config merging here (`mergeConfig`), not route/command wiring.
-- `boot(ApplicationContext)` runs **after all** providers are registered — safe to load routes, register migrations, discover commands, and read other extensions' services.
+- `register(ApplicationContext)` runs for **every** provider first — do config merging here (`mergeConfig`), not route/migration/command wiring.
+- `boot(ApplicationContext)` runs **after all** providers are registered — load routes, register migrations, discover commands, attach event listeners, register message catalogs/notification channels, and read other extensions' services here.
+- **Never call `loadRoutesFrom()` or `loadMigrationsFrom()` from `register()`.** They are runtime wiring and must live in `boot()` so the HTTP app and CLI migration runner see the same extension surface after config and all providers are available.
 - In real extensions, `boot()` wraps each step in try/catch and logs (fail-fast in non-production) so one extension's failure doesn't abort the whole boot.
 
 ## Activating an optional core capability (a "seam")
@@ -170,8 +171,8 @@ A plain autowirable impl can use the array form (`EdgeCacheInterface::class => [
 ## ServiceProvider helper methods (verified)
 
 Available to your provider:
-- `loadRoutesFrom(string $path)` — execute a route file (gets `$router` in scope).
-- `loadMigrationsFrom(string $dir, int $priority = MigrationPriority::DEFAULT, ?string $source = null)` — register a migrations directory. **Pass `$priority` and `$source` (framework ≥ 1.50):** `Glueful\Database\Migrations\MigrationPriority` tiers are `FOUNDATION` (-200), `IDENTITY` (-100, the `glueful/users` store), `DEFAULT` (0, the app), `DEPENDENT` (100). An extension whose tables reference the user store must register at `DEPENDENT` so it runs **after** identity/app migrations: `$this->loadMigrationsFrom(__DIR__.'/../migrations', MigrationPriority::DEPENDENT, 'glueful/yourext')`. The `$source` string tags the migrations in the `migrations` table's `source` column (two packages can ship the same filename without conflict; rollback resolves by `(source, migration)`).
+- `loadRoutesFrom(string $path)` — execute a route file (gets `$router` in scope). Call from `boot()`, not `register()`.
+- `loadMigrationsFrom(string $dir, int $priority = MigrationPriority::DEFAULT, ?string $source = null)` — register a migrations directory. Call from `boot()`, not `register()`. **Pass `$priority` and `$source` (framework ≥ 1.50):** `Glueful\Database\Migrations\MigrationPriority` tiers are `FOUNDATION` (-200), `IDENTITY` (-100, the `glueful/users` store), `DEFAULT` (0, the app), `DEPENDENT` (100). An extension whose tables reference the user store must register at `DEPENDENT` so it runs **after** identity/app migrations: `$this->loadMigrationsFrom(__DIR__.'/../migrations', MigrationPriority::DEPENDENT, 'glueful/yourext')`. The `$source` string tags the migrations in the `migrations` table's `source` column (two packages can ship the same filename without conflict; rollback resolves by `(source, migration)`).
 - `mergeConfig(string $key, array $defaults)` — merge extension config under a config key.
 - `discoverCommands(string $namespace, string $dir)` — auto-register `#[AsCommand]` classes under a dir.
 - `commands(array $classes)` — register CLI command classes explicitly.
@@ -209,13 +210,13 @@ list, and recompile. `extensions:list` shows each extension's state
 - DI is a **static `services()` array**, not `$this->app->bind()`/`singleton()` in `register()`.
 - Discovery is **composer `extra.glueful.provider`** (one FQCN), not a `providers` array in app config.
 - No `php artisan make:provider`/`vendor:publish` — wire routes/migrations/config via the `ServiceProvider` helper methods in `boot()`/`register()`.
-- `register()` is for config merge only; do route/migration/command wiring in `boot()`.
+- `register()` is for config merge only; do route/migration/command/runtime wiring in `boot()`.
 
 ## Checklist
 
 - [ ] `composer.json`: `type: "glueful-extension"`, PSR-4 autoload, and `extra.glueful.provider` set to the provider FQCN (+ `requires.glueful` version).
 - [ ] Provider extends `Glueful\Extensions\ServiceProvider`.
 - [ ] DI via `static services(): array` (class/shared/autowire/arguments with `@` refs) — not imperative binding.
-- [ ] `register()` does config merge only; `boot()` loads routes/migrations/commands (guarded with try/catch) and calls `registerMeta()` so `extensions:list`/`info` report it.
+- [ ] `register()` does config merge only; `boot()` loads routes/migrations/commands and other runtime wiring (guarded with try/catch) and calls `registerMeta()` so `extensions:list`/`info` report it.
 - [ ] Route/migration paths match the scaffold layout (`../routes/routes.php`, `../database/migrations`).
 - [ ] Verified with `extensions:list` / `extensions:info` / `extensions:diagnose` after enabling.
