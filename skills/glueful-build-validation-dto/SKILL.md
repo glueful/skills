@@ -1,43 +1,72 @@
 ---
 name: glueful-build-validation-dto
-description: Validate and normalize request input with a Glueful DTO — a final class with a readonly constructor and a static factory that runs the Validator (Sanitize/Length/InArray/Numeric/Required/… rules), throws ValidationException on failure, and builds the typed object from the sanitized values. Also covers writing custom Rule classes. Use when accepting input for a write/list endpoint. Glueful validation is Validator + Rule objects, not Laravel's Validator facade or FormRequest.
+description: Validate and normalize request input in Glueful — a typed RequestData DTO with Rule-attribute constraints (router-hydrated, auto-422) by default, or a manual DTO whose static factory runs the Validator (Sanitize/Length/InArray/Numeric/Required/DbUnique/… rule objects), throws ValidationException on failure, and builds the typed object from the sanitized values. Also covers custom Rule classes and RuleRegistry. Use when accepting input for a write/list endpoint. Glueful validation is Validator + Rule objects and rule strings, not Laravel's Validator facade or $request->validate().
 ---
 
 # Validation DTOs
 
-A DTO validates and normalizes request input **at the edge of a use case**, so controllers stay thin and validation doesn't drift across endpoints (`glueful-architect-app`). It's a `final` class with a readonly constructor (the validated fields) and a static factory that runs the framework `Validator`, throws `ValidationException` on failure, and constructs from the **sanitized** values.
+A DTO validates and normalizes request input **at the edge of a use case**, so controllers stay thin and validation doesn't drift across endpoints (`glueful-architect-app`). A failed validation throws `Glueful\Validation\ValidationException`, rendered as **422** with a top-level `errors` map (`field => [messages]`).
 
-## Two DTO styles — pick by need
+## Pick a style
 
-Glueful has **two** request-DTO styles; this skill covers the first:
+1. **Typed `RequestData` DTO (default).** A class implementing `Glueful\Validation\Contracts\RequestData` with `#[Rule('required|string|max:200')]` on its promoted constructor params. The **router** decodes the JSON body, validates, and injects it typed — no factory call — auto-`422` on failure; the OpenAPI generator derives the request schema from it. Scaffold: `php glueful scaffold:dto CreateArticleData` (→ `app/DTOs`).
+2. **Manual `Validator` DTO (this skill's main example).** A `final` class + static factory that runs the `Validator` with Rule objects and builds from `filtered()`. Use it when you need **mutating sanitization** (`Sanitize`/`CastTo*` — `RequestData` validates but never transforms), non-JSON input (form/multipart), or validation outside HTTP (services, jobs, imports).
+3. **`#[Validate([...])]` / Glueful's own `FormRequest`** — rule strings run by the `validate` route middleware (`scaffold:request` → `app/Http/Requests`). Fine for array-style input you haven't migrated; don't combine `#[Validate]` with a `RequestData` param on one route.
 
-- **Manual `Validator` DTO (this skill).** A `final` class + static factory that runs the `Validator` (Rule objects) and builds from `filtered()`. Its remaining niche after request-DTO **v2**: **mutating sanitization** (`Sanitize` trim/strip — `RequestData` validates but never mutates input) and bespoke shaping a `#[Rule]` string + `ValidatesSelf` can't express. You call the factory explicitly in the controller.
-- **Typed `RequestData` DTO (framework ≥ 1.57.0; **v2** in ≥ 1.58.0).** A class implementing `Glueful\Validation\Contracts\RequestData` with `#[Rule('required|string|max:200')]` constraints on its promoted constructor params. The **router** decodes the request, validates, and injects it typed — no factory call — auto-`422` on failure; the reflect OpenAPI generator derives the request schema from it. **v2 (1.58.0) closes the old flat-scalar limits:**
-  - **arrays & nested DTOs** via `#[ArrayOf('int')]` (scalars) / `#[ArrayOf(ItemData::class)]` (nested `RequestData`) — recursive, with dot-path `422`s like `schema.0.name`, **never a `TypeError`/500**;
-  - **path/query inputs** via `#[FromRoute]` / `#[FromQuery]` (body is the default; one source per field);
-  - **cross-field invariants** via the `ValidatesSelf` contract (`validate(): array`, merged into the `422`);
-  - **app-registered custom rules** via `RuleRegistry`, used by name in `#[Rule('required|reserved_username')]`.
-
-  See `glueful-add-controller` and framework `docs/REQUEST_DTOS.md`.
-
-Rule of thumb: reach for the typed `RequestData` DTO **by default** — since v2 it handles arrays, nested DTOs, path/query sources, and cross-field rules. Drop to the manual `Validator` DTO below only when you need **mutating sanitization** (it transforms the value; `RequestData` does not) or shaping that `#[Rule]` + `ValidatesSelf` can't express.
-
-## Define the DTO
+## Typed `RequestData` DTO
 
 ```php
-namespace App\DTO\Article;
+namespace App\DTOs;
 
+use Glueful\Validation\Attributes\{ArrayOf, FromRoute, FromQuery, Rule};
+use Glueful\Validation\Contracts\{RequestData, ValidatesSelf};
+
+final class UpdateArticleData implements RequestData, ValidatesSelf
+{
+    public function __construct(
+        #[FromRoute] public readonly string $uuid,                       // from {uuid} in the path
+        #[Rule('required|string|max:200')] public readonly string $title,
+        #[Rule('in:draft,published')] public readonly string $status = 'draft',
+        #[Rule('array'), ArrayOf('string')] public readonly array $tags = [],
+        #[Rule('array'), ArrayOf(LinkData::class)] public readonly array $links = [],  // nested RequestData
+        #[FromQuery] public readonly bool $notify = false,             // ?notify=true → coerced to bool
+        #[Rule('nullable|date')] public readonly ?string $publish_at = null,
+    ) {}
+
+    public function validate(): array                      // cross-field; runs after construction
+    {
+        return ($this->status === 'published' && $this->publish_at === null)
+            ? ['publish_at' => ['Required when publishing.']]
+            : [];
+    }
+}
+```
+
+- **Exact-name binding** — the param name IS the JSON/path/query key (`$publish_at` ↔ `publish_at`); no snake/camel conversion.
+- A required-but-absent non-nullable param is a **422**, not a `TypeError`; defaults/nullables fill absent keys; scalars are coerced to the declared type after validation.
+- `#[ArrayOf]` errors are dot-pathed (`links.0.url`); nesting is capped at 5 levels. One source attribute per field; `#[FromRoute]` needs a matching `{placeholder}` (misuse fails loud).
+- Path/query values arrive as **strings**, and the `integer`/`boolean` rules are strict type checks — on `#[FromRoute]`/`#[FromQuery]` fields use `numeric` (or no type rule) and let the declared PHP type coerce.
+- JSON body only — a form/multipart request won't hydrate; use style 2 or 3 there.
+
+Rule strings (`#[Rule]`, `#[Validate]`, `FormRequest`): `required`, `string`, `integer`/`int`, `boolean`/`bool`, `array`, `numeric`, `min:N`/`max:N` (string length), `in:a,b`, `regex:/…/`, `email`, `url`, `json`, `uuid`, `date[:fmt]`, `before:`/`after:`, `confirmed`, `unique:table,column[,exceptId]`, `exists:table,column`, `nullable`, `sometimes`, `file:…`, `image:…`, `dimensions:…`. Every rule except `required` passes on an absent/`null` value. `nullable` also treats `""` as no value; `sometimes` skips an absent key entirely (partial updates). `unique:`/`exists:` really query the DB (since 1.91) — still back uniqueness with a unique index.
+
+## Manual `Validator` DTO
+
+```php
+namespace App\DTOs\Article;
+
+use Glueful\Bootstrap\ApplicationContext;
 use Glueful\Validation\Validator;
 use Glueful\Validation\ValidationException;
-use Glueful\Validation\Rules\{Sanitize, Length, InArray};
+use Glueful\Validation\Rules\{Sanitize, Required, Length, InArray};
 
 final class ArticleCreateDTO
 {
     public function __construct(
-        public readonly ?string $title,
+        public readonly string  $title,
         public readonly ?string $body,
         public readonly ?string $category,
-        public readonly ?string $status,
+        public readonly string  $status,
         /** @var array<string> */
         public readonly array   $tagUuids = [],
     ) {}
@@ -46,61 +75,57 @@ final class ArticleCreateDTO
      * @param array<string,mixed> $data Raw request data
      * @throws ValidationException
      */
-    public static function fromRequest(array $data): self
+    public static function fromRequest(array $data, ApplicationContext $context): self
     {
         $validator = new Validator([
-            'title'    => [new Sanitize(['trim']), new Length(1, 200)],
+            'title'    => [new Sanitize(['trim']), new Required(), new Length(1, 200)],
             'body'     => [new Sanitize(['trim']), new Length(0, 50000)],
             'category' => [new Sanitize(['trim']), new InArray(['news', 'opinion', 'review'])],
             'status'   => [new Sanitize(['trim']), new InArray(['draft', 'published'])],
-        ]);
+        ], $context);                                // context lets DbUnique/Exists reach the DB
 
-        $errors = $validator->validate($data);   // returns an errors map; does NOT throw
-        if (!empty($errors)) {
+        $errors = $validator->validate($data);      // returns an errors map; does NOT throw
+        if ($errors !== []) {
             throw new ValidationException($errors);
         }
 
-        $clean = $validator->filtered();          // sanitized/mutated values — use THESE, not raw $data
+        $clean = $validator->filtered();             // sanitized values — use THESE, not raw $data
 
         return new self(
-            title:    $clean['title'] ?? null,
+            title:    $clean['title'],
             body:     ($clean['body'] ?? '') !== '' ? $clean['body'] : null,
             category: $clean['category'] ?? null,
             status:   $clean['status'] ?? 'draft',
-            tagUuids: array_values(array_filter((array)($data['tags'] ?? []), 'is_string')),
+            tagUuids: array_values(array_filter((array) ($data['tags'] ?? []), 'is_string')),
         );
     }
 }
 ```
 
-(The framework's own DTOs name the factory `from()`; `fromRequest()` is a clearer convention — the name is yours, the mechanism is what matters.)
+### How the Validator works
 
-## How the Validator works
+- `new Validator(array $rules, ?ApplicationContext $context = null, ?Connection $connection = null)` — a **field → array-of-Rule-objects** map. `Glueful\Validation\Support\Rules::of([...])` is shorthand (no context).
+- `validate(array $data): array` returns an **errors map**, empty when valid — it **does not throw**.
+- Rules run in order per field. **Mutating rules** (`Sanitize`, `CastToInt`, `CastToBoolean`, `CastToDate`) transform the value for the rules after them — put them first. `filtered()` returns the post-mutation values for **ruled fields only** (unruled keys are dropped; `sometimes`-skipped fields are omitted).
+- Built-in rule objects (`Glueful\Validation\Rules\*`): `Required`, `Nullable`, `Sometimes`, `Email`, `Url`, `Uuid`, `Json`, `Regex`, `Type('integer')` (strict), `Length(min,max)`, `Range(min,max)`, `Numeric(min,max,integerOnly)`, `InArray([...])`, `Date`, `Before`/`After`, `Confirmed`, `DbUnique`, `Exists`, `File`, `Image`, `Dimensions`, `Sanitize([...])` (`trim`, `ltrim`, `rtrim`, `strip_tags`, `lower`, `upper`), `CastTo*`.
+- **`DbUnique`/`Exists` fail closed**: a `Validator` built without context or connection throws `LogicException` when they run on a non-empty value. Pass `$context` (or `connection: db($context)`).
 
-- Construct with a **field → array-of-Rule-objects** map: `new Validator(['email' => [new Required(), new Email()]])`.
-- `validate(array $data): array` returns an **errors map** (`field => [messages]`), empty when valid — it **does not throw**; you decide to throw `ValidationException($errors)`.
-- `filtered()` returns the values **after mutating rules ran** (e.g. `Sanitize` trimmed/stripped). Always build the DTO from `filtered()`, not the raw input, so you persist the cleaned values.
-
-Built-in rules live in `Glueful\Validation\Rules\*`: `Required`, `Email`, `Length(min,max)`, `InArray([...])`, `Numeric(min,max)`, `Before`/`After`, and `Sanitize([...])`. `Sanitize` is a **mutating** rule (transforms the value), not a check — that's why it shows up in `filtered()`.
-
-## Use it in a controller
-
-The controller validates via the DTO and hands the **typed object** to a service — it does not hand-roll checks:
+### Use it in a controller
 
 ```php
 public function store(Request $request): Response
 {
-    $dto = ArticleCreateDTO::fromRequest(RequestHelper::getRequestData($request)); // throws ValidationException on bad input
+    $dto = ArticleCreateDTO::fromRequest(RequestHelper::getRequestData($request), $this->getContext());
     $article = $this->articleService->create($dto, $this->userContext->getUserUuid());
     return $this->created($article, 'Article created');
 }
 ```
 
-`ValidationException` is mapped to a structured 4xx by the framework's exception handler — you don't catch it in the controller. (For one-off checks outside a DTO, `ValidationException::forField($field, $msg)` / `forFields([...])` exist.)
+`ValidationException` is mapped to the 422 envelope by the exception handler — don't catch it in the controller. For one-off checks, `ValidationException::forField($field, $msg)` / `forFields([...])` exist.
 
 ## Custom rules
 
-Implement `Glueful\Validation\Contracts\Rule` — return an error message string, or `null` when valid. Let empty/null pass (so `Required` owns presence):
+Implement `Glueful\Validation\Contracts\Rule` — return an error message string, or `null` when valid. Let empty/null pass (so `Required` owns presence). Scaffold with `php glueful scaffold:rule ReservedUsername` (→ `app/Validation/Rules`).
 
 ```php
 namespace App\Validation\Rules;
@@ -126,21 +151,24 @@ final class ReservedUsername implements Rule
 }
 ```
 
-Use it like any built-in: `'username' => [new Required(), new Length(3, 30), new ReservedUsername()]`. The `$context` arg carries `['field' => ..., 'data' => $allData]` for cross-field rules. For a value *transform* (not a check), implement `MutatingRule` instead and return the mutated value from `mutate()`.
+- As an object: `'username' => [new Required(), new Length(3, 30), new ReservedUsername()]`. `$context` carries `['field' => ..., 'data' => $allData]` (plus `'context'` when the Validator has one) for cross-field rules.
+- By name in rule strings (`#[Rule('required|reserved_username')]`): an `App\Validation\Rules\{StudlyName}` class is resolved automatically; otherwise register it in a provider's `boot()` — `app($context, RuleRegistry::class)->register('reserved_username', ReservedUsername::class)` (`Glueful\Validation\Support\RuleRegistry`). Built-in names can't be shadowed.
+- For a value *transform*, implement `MutatingRule::mutate(mixed $value, array $context = []): mixed` instead.
 
 ## Gotchas
 
-- **`validate()` returns errors, it doesn't throw** — you throw `ValidationException($errors)` when the map is non-empty.
-- **Build the DTO from `filtered()`**, not raw `$data`, or you lose the `Sanitize` mutations (untrimmed/unstripped values get persisted).
-- **`Sanitize` is a mutating rule**, not a guard — it never produces an error, it changes the value.
-- **Custom rules return `?string`** (message or `null`); let null/empty pass and leave presence to `Required`.
-- **Validate in the DTO, not the controller** — prevents per-endpoint validation drift; the controller just calls `XDTO::fromRequest(...)`.
+- **`validate()` returns errors, it doesn't throw** — throw `ValidationException($errors)` when the map is non-empty.
+- **Build the manual DTO from `filtered()`**, not raw `$data`, or you lose the `Sanitize` mutations.
+- **Absent ≠ invalid**: without `Required`/`required`, a missing field passes every rule.
+- **DB rules need a connection** — give the `Validator` the context, or they throw.
+- **`RequestData` never mutates input** and reads JSON only — trimming/casting or form input → manual DTO.
+- **Validate in the DTO, not the controller** — the controller just calls the factory or type-hints the `RequestData`.
 
 ## Checklist
 
-- [ ] Chose the right style: a typed `RequestData` DTO by default (v2 handles arrays/nested via `#[ArrayOf]`, path/query via `#[FromRoute]`/`#[FromQuery]`, cross-field via `ValidatesSelf`, custom rules via `RuleRegistry`), or this manual `Validator` DTO when you need mutating sanitization or shaping rules can't express.
-- [ ] DTO is a `final` class with a readonly constructor of the validated fields + a static `fromRequest()`/`from()` factory.
-- [ ] Factory builds a `Validator([field => [Rule...]])`, throws `ValidationException($errors)` when `validate()` returns a non-empty map.
-- [ ] DTO constructed from `$validator->filtered()` (sanitized values), not raw input.
-- [ ] Custom rules implement `Rule::validate(): ?string` (null = pass), or `MutatingRule` for transforms.
-- [ ] Controller calls the DTO factory and passes the typed DTO to a service; no inline validation.
+- [ ] Chose the style: typed `RequestData` by default; manual `Validator` DTO for sanitization, non-JSON input, or non-HTTP use.
+- [ ] `RequestData`: params named exactly as the JSON keys; `#[Rule]` on each; `#[ArrayOf]` for arrays; `#[FromRoute]`/`#[FromQuery]` for non-body fields; `ValidatesSelf` for cross-field rules.
+- [ ] Manual DTO: `final` class, readonly constructor, static factory building `new Validator([...], $context)`, throwing `ValidationException($errors)`, constructing from `filtered()`.
+- [ ] Mandatory fields carry `Required`/`required`; partial updates use `sometimes`.
+- [ ] Custom rules implement `Rule::validate(): ?string` (null = pass) in `App\Validation\Rules`, or `MutatingRule` for transforms.
+- [ ] Controller passes the typed DTO to a service; no inline validation.

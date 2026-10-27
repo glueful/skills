@@ -15,19 +15,32 @@ When a convenient method genuinely seems missing: search thoroughly first, then 
 
 ## Rule 1 — `ApplicationContext` is required almost everywhere
 
-Most framework entry points take `Glueful\Bootstrap\ApplicationContext` as the **first parameter**. This replaces Laravel-style static facades and global state. If you're calling a helper or a Model static and you don't have a `$context`, that's the thing to resolve first.
+Most framework entry points take `Glueful\Bootstrap\ApplicationContext` as the **first parameter**. This replaces Laravel-style static facades and global state. If you're calling a helper or a Model static and you don't have a `$context`, that's the thing to resolve first. Where it comes from:
+
+- **Controllers** (`BaseController`), **jobs** (`Queue\Job`): `$this->context`
+- **Providers**: `register(ApplicationContext $context)` / `boot(ApplicationContext $context)`
+- **Console commands** (`BaseCommand`): `$this->getContext()`
+- **App route files** (`routes/*.php`): `$router` and `$context` are injected. Extension route files loaded via `loadRoutesFrom()` get only `$router` — use `$context = $router->getContext();`
+- **Middleware / services**: type-hint `ApplicationContext` in the constructor (it's in the container)
+- **Config files**: there is no context there — use `env()`
 
 ## The framework helpers (`src/helpers.php`)
 
-Verified signatures — all take context first:
+Verified signatures — context first:
 
 ```php
 app(ApplicationContext $context, ?string $abstract = null): mixed      // resolve from container
 container(ApplicationContext $context): \Psr\Container\ContainerInterface
 db(ApplicationContext $context): \Glueful\Database\Connection
-config(ApplicationContext $context, string $key, mixed $default = null): mixed
-image(ApplicationContext $context, /* ... */)
+config(ApplicationContext $context, string $key, mixed $default = null): mixed   // read-only, not a setter
+service(ApplicationContext $context, string $id): mixed
+has_service(ApplicationContext $context, string $id): bool
+base_path / storage_path / config_path / resource_path(ApplicationContext $context, string $path = ''): string
+is_production(ApplicationContext $context): bool
+api_prefix(ApplicationContext $context): string     // e.g. "/api/v1"
 ```
+
+`image()` is **not** a core helper — it's defined by the `glueful/media` extension.
 
 Usage:
 
@@ -42,29 +55,37 @@ $ttl = config($context, 'auth.two_factor.pin_ttl', 300);
 Get a query builder via the connection (inject `Connection` or resolve it):
 
 ```php
-$users = db($context)->table('users')
+$page = db($context)->table('users')
+    ->select(['users.uuid', 'users.email'])            // array, not variadic
     ->where('status', '=', 'active')   // 2-arg shorthand only normalizes non-string operands; prefer explicit 3-arg
-    ->join('profiles', 'users.id', 'profiles.user_id')
-    ->paginate(25);
+    ->join('profiles', 'users.uuid', '=', 'profiles.user_uuid')   // join(table, first, operator, second)
+    ->paginate(1, 25);                                 // paginate(int $page, int $perPage) — page FIRST
 ```
 
-**Transactions** — there is no `DB::transaction()`. Use the connection:
+- `insert(array)` returns the **row count**; use `insertGetId(array)` for the new id. Bulk: `insertBatch(array $rows)` (no `insertMany`).
+- Aggregates: `count()`, `exists()`, `max()`, `pluck()` — there is no `sum()`/`avg()`/`min()`/`find()` on the query builder (use `selectRaw` or the ORM).
+- `having(array $conditions)` / `havingRaw(...)` — not `having(col, op, val)`.
+- Text search: `whereContains()` / `whereStartsWith()` / `whereEndsWith()` (case-insensitive, escapes `%`/`_`); `whereLike()` takes a raw pattern.
+
+**Transactions** — there is no `DB::transaction()`, and `Connection` has no `beginTransaction()/commit()/rollback()`. Use:
 
 ```php
 db($context)->transaction(function () use ($context) {
-    // ... transactional work
+    // ... transactional work; build queries inside the callback (it may be replayed on retry)
 });
 
 db($context)->afterCommit(function () {
     // ... runs only after the surrounding transaction commits
 });
+// also: afterRollback(callable), withinTransaction(): bool
 ```
 
-**Query result caching** (framework ≥ 1.46.0): `->cache(?int $ttl = null, array $tags = [])` caches read queries and tags them by table plus any tags you pass; invalidate with `$cache->invalidateTags([...])`. In earlier versions `->cache()` was a no-op — check the framework version before relying on it.
+**Typed errors**: driver failures surface as `Glueful\Database\Exceptions\*` — e.g. `UniqueConstraintViolationException`, `ForeignKeyConstraintViolationException`, `DeadlockException`, `ConnectionLostException` (unique violations render as 409). Catch these rather than parsing SQLSTATE strings.
+
+**Query result caching**: `->cache(?int $ttl = null, array $tags = [])` caches read queries, tagged by table plus any tags you pass; invalidate with `invalidateTags([...])` on the cache store.
 
 **Raw query methods** are not all equal for safety:
-- `whereRaw`, `havingRaw`, `executeRaw`, `executeRawFirst` accept a bindings array — pass user values through it, never concatenate.
-- `selectRaw(string $expression, array $bindings = [])` accepts bindings (framework ≥ 1.45.0).
+- `whereRaw`, `havingRaw`, `selectRaw`, `executeRaw`, `executeRawFirst` accept a bindings array — pass user values through it, never concatenate.
 - `orderByRaw(string $expression)` takes **no** bindings — never pass user input; allowlist it.
 
 ## ORM / Models
@@ -74,25 +95,33 @@ Model statics take `ApplicationContext` first (this is the part most often gotte
 ```php
 use Glueful\Bootstrap\ApplicationContext;
 
-$user  = User::find($context, $id);                       // ?static
-$query = User::query($context)->where('status', 'active'); // Builder
-$users = User::query($context)->with('profile')->paginate(page: 1, perPage: 25);
+$user  = User::find($context, $id);                       // ?static  (also findOrFail, all, firstOrCreate, updateOrCreate, destroy)
+$query = User::query($context)->where('status', '=', 'active'); // ORM Builder
+$page  = User::query($context)->with('profile')->withCount('posts')->paginate(page: 1, perPage: 25);
+// $page['data'] is a Glueful\Database\ORM\Collection of models (eager loads + {relation}_count applied)
 
 // Creating / saving
+$post = Post::create($context, ['title' => 'Hello']);
 $post = new Post(['title' => 'Hello'], $context);
 $post->save();   // bool
 ```
 
-> Note: some older docs show `User::query()->where(...)` without a context argument. The real signature requires the context — always pass it.
+Soft deletes (`withTrashed()`/`onlyTrashed()`/`restore()`/`forceDelete()`), `belongsToMany` eager loading + `attach/detach/sync/toggle`, `whereHas()` constraint closures, `withCount()`, and model events (returning `false` cancels) all work as named (framework ≥ 1.91).
+
+> Note: a booted app sets a default model context, so a context-less static call may not throw — but the documented signatures are context-first. Always pass `$context`. Factories: `User::factory()->create()` works in a booted app; outside one use `Model::factory($count, $context)` or `Factory::withContext($context)`.
 
 ## Controllers
 
-Extend `BaseController` (its constructor takes `ApplicationContext` first). Resolve the authenticated user via the request user context, not Symfony's `$request->getUser()`:
+Extend `Glueful\Controllers\BaseController` (constructor: `ApplicationContext $context` first, then optional deps). It exposes `$this->context`, `$this->request`, `$this->currentUser`, `$this->userContext` — there is **no** `$this->db`; use `db($this->context)` or inject `Connection` (better: a repository). Resolve the authenticated user via the request user context, not Symfony's `$request->getUser()`:
 
 ```php
 $userUuid = $this->userContext->getUserUuid();   // ?string
 $user     = $this->userContext->getUser();        // ?Glueful\Auth\UserIdentity ($user->uuid(), $user->email())
 ```
+
+**Register every controller** in your app provider's `services()` (`Controller::class => ['autowire' => true, 'shared' => true]`) — the router resolves handlers from the container and has no autowire fallback ("Service not found" otherwise). `php glueful scaffold:controller` prints the line to add.
+
+A handler parameter type-hinted with a `Glueful\Validation\Contracts\RequestData` DTO (properties carry `#[Rule('required|string|max:255')]`) is hydrated and validated by the router before the method runs (422 on failure).
 
 > **Identity (framework ≥ 1.50.0):** the concrete user store (`User`/`UserRepository`) was extracted to the `glueful/users` extension; core depends only on the `Glueful\Auth\UserProviderInterface` contract and returns a canonical, immutable `Glueful\Auth\UserIdentity` (accessors are **methods** — `uuid()`, `email()`, `roles()`, `scopes()`). The old `AuthenticatedUser` class no longer exists. With no user store installed, core binds a fail-closed `NullUserProvider` and auth is disabled by design.
 
@@ -105,29 +134,34 @@ return Response::success($data, 'Message');   // {success, message, data}
 
 ## Routing
 
-Routes live in `routes/*.php` (loaded via `RouteManifest`). The builder is fluent; middleware uses the `RouteMiddleware` interface (not PSR-15, though a PSR-15 bridge exists):
+Every `routes/*.php` file in the app is auto-loaded by `RouteManifest` (files starting with `_` are skipped as partials). There is no `Route::` facade and no `$router->resource()`. The builder is fluent; middleware uses the `RouteMiddleware` interface (not PSR-15, though a PSR-15 bridge exists):
 
 ```php
-$router->post('/users/{id}', [UserController::class, 'show'])
-    ->where('id', '\d+')
-    ->rateLimit(5, 1)                       // builder form is what's enforced — NOT the rate_limit:N,W string form
-    ->middleware(['auth', 'rate_limit'])
-    ->name('users.show');
+$router->group(['prefix' => api_prefix($context), 'middleware' => ['auth']], function (Router $router) {
+    $router->get('/users/{id}', [UserController::class, 'show'])
+        ->where('id', '\d+')
+        ->rateLimit(5, 1)          // (attempts, perMinutes, tier, algorithm, by: 'ip'|'user'|'endpoint')
+        ->name('users.show');      // rate_limit middleware is attached automatically
+});
 ```
 
-Attribute routing exists too (`#[Controller]`, `#[Get]`, `#[Post]`, `#[Fields]`, `#[RequireScope]`).
+The string form `rate_limit:attempts,windowSeconds[,ip|user|endpoint]` also works (note: window in **seconds**, vs minutes in `->rateLimit()`). Real middleware aliases: `auth`, `rate_limit`, `enhanced_rate_limit`, `csrf`, `security_headers`, `field_selection`, `require_scope`, `gate_permissions`, `admin`, `allow_ip`, `lockdown`, `conditional_cache`, `request_logging`, `session_cookie`, `metrics`, `tracing`, `validate`, `auth_to_request`, `filter`. There is **no** `cors`, `role`, or `cache:` alias (CORS is applied globally from `config/cors.php`).
+
+Attribute routing exists too — `Glueful\Routing\Attributes\{Controller, Get, Post, Put, Patch, Delete, Middleware, Fields, RequireScope}`, plus `#[RateLimit]` (`Glueful\Api\RateLimiting\Attributes`) and `#[RequiresPermission]` / `#[RequiresRole]` (`Glueful\Auth\Attributes`; stacked roles = any-of). Controllers in `app/Controllers/` are scanned at boot; attribute routes are **not** API-prefixed, so put the full prefix in `#[Controller]`. `#[Fields]`, `#[RateLimit]` and the gate attributes auto-attach their middleware.
 
 ## Events
 
-All events extend `Glueful\Events\Contracts\BaseEvent` and must call `parent::__construct()`. Dispatch via the injected `EventService` (preferred) or `app($context, EventService::class)`. Register listeners in `config/events.php`.
+Events extend `Glueful\Events\Contracts\BaseEvent` and call `parent::__construct()`. Dispatch via the injected `Glueful\Events\EventService` (`dispatch($event)`) or `app($context, EventService::class)`. Listeners are **not** registered in `config/events.php` (that file only toggles core listeners). Mark handler methods `#[AsListener(SomeEvent::class)]` (`Glueful\Events\Attributes\AsListener`, or implement `EventSubscriberInterface`) and subscribe the class from a provider's `boot()`: `app($context, EventService::class)->subscribe(MyListener::class)`. Ad-hoc: `addListener(SomeEvent::class, $callable)`. Mark an event `#[Webhookable]` to fan it out to webhook subscribers — no listener needed.
 
 ## Middleware
 
-Implement `Glueful\Routing\RouteMiddleware`:
+Implement `Glueful\Routing\RouteMiddleware` (Symfony `Request`); keep the variadic — dropping it is a fatal:
 
 ```php
-public function handle(Request $request, callable $next, ...$params): Response
+public function handle(Request $request, callable $next, mixed ...$params): mixed
 ```
+
+String params (`my_mw:a,b`) arrive as **strings**. Register the class in `services()` and reference it by FQCN (or a container id you define).
 
 ## Official extensions — prefer these over rolling your own
 
@@ -139,6 +173,7 @@ Before hand-building a capability, check whether an **official Glueful extension
 | Aegis | `glueful/aegis` | Role-based access control — roles, permissions, authorization workflows |
 | Tenancy | `glueful/tenancy` | Shared-database, row-level multi-tenancy — tenant-owned tables (`tenant_uuid` + `BelongsToTenant`), automatic per-tenant scoping, memberships, resolution middleware, and explicit bypass APIs |
 | Entrada | `glueful/entrada` | Social login / SSO — OAuth & OpenID Connect flows |
+| Audit | `glueful/audit` | Event-sourced audit trail (audit logging is not in core) |
 | Email Notification | `glueful/email-notification` | Email delivery (Symfony Mailer) — transactional notifications; the email channel for core features like 2FA |
 | Notiva | `glueful/notiva` | Push notifications — FCM, APNs, Web Push |
 | Meilisearch | `glueful/meilisearch` | Full-text search / external indexing |
@@ -154,19 +189,25 @@ Before hand-building a capability, check whether an **official Glueful extension
 | Storage packs | `glueful/storage-s3` · `storage-gcs` · `storage-azure` | Object-store disks — each registers a `StorageDriverFactoryInterface` on the core storage registry seam (`storage.driver_factory` tag). S3 pack also covers R2, MinIO, Spaces, Wasabi as S3-compatible targets. Disks with `driver => s3|gcs|azure` resolve once installed. |
 | Conversa | `glueful/conversa` | SMS & WhatsApp notification channels — swappable provider drivers (Twilio, Meta WhatsApp Cloud, log), message log, delivery tracking. |
 | Subscriptions | `glueful/subscriptions` | Plans, tenant subscriptions, and stateless entitlements — numeric limits, trials, overrides, lifecycle sync for SaaS apps. |
-| Commerce | `glueful/commerce` | Commerce primitives — products, carts, orders, inventory, discounts, checkout (early-stage; verify maturity before depending on it). |
+| Commerce | `glueful/commerce` | Commerce primitives — products, carts, orders, inventory, discounts, checkout, payment integration (pairs with Payvia). Ships no UI. |
 
-Media, CDN, Queue Ops, and Archive were **extracted from core in framework 1.52.0**: core keeps a contract + no-op default (a *seam*) and the extension binds the real implementation when installed (see `glueful-create-extension` → "Activating an optional core capability"). If the user asks for RBAC, social login, email, push, SMS/WhatsApp, search, payments, a high-performance runtime, image processing, a CDN/edge cache, queue supervision/autoscaling, table archiving, localization, feature flags, bulk import/export, S3/GCS/Azure storage, or subscription plans/entitlements, recommend the matching extension rather than scaffolding bespoke code. Build a custom extension only when no official one fits.
+Media, CDN, Queue Ops, and Archive were **extracted from core in framework 1.52.0**: core keeps a contract + no-op default (a *seam*) and the extension binds the real implementation when installed (see `glueful-create-extension` → "Activating an optional core capability"). If the user asks for RBAC, social login, audit trails, email, push, SMS/WhatsApp, search, payments, a high-performance runtime, image processing, a CDN/edge cache, queue supervision/autoscaling, table archiving, localization, feature flags, bulk import/export, S3/GCS/Azure storage, or subscription plans/entitlements, recommend the matching extension rather than scaffolding bespoke code. Build a custom extension only when no official one fits.
 
 ## Extensions
 
-Extend `Glueful\Extensions\ServiceProvider`. `static services(): array` returns DI definitions; `register()` is for lightweight provider registration only, especially config defaults (`mergeConfig`). Runtime wiring belongs in `boot()`, after all providers are registered: routes (`loadRoutesFrom`), migrations (`loadMigrationsFrom`), commands (`discoverCommands`/`commands`), event listeners, catalogs, notification channels, and metadata registration. Do not load extension routes or migrations from `register()`; CLI/app boot paths can miss them or run before other providers are ready. Discovery is via the package's composer `extra.glueful.provider`. Scaffold a new one with `php glueful create:extension <name>` (note: `create:extension`, **not** `extensions:create`); manage installed ones with `extensions:enable|disable|list|info|diagnose`.
+Extend `Glueful\Extensions\ServiceProvider`. `static services(): array` returns DI definitions; `register(ApplicationContext $context)` is for lightweight registration only, especially config defaults (`mergeConfig($key, $defaults)` — not `mergeConfigFrom`). Runtime wiring belongs in `boot(ApplicationContext $context)`, after all providers are registered: routes (`loadRoutesFrom`), commands (`discoverCommands($namespace, $dir)` / `commands([...])`), event subscriptions, message catalogs, notification channels, a built SPA (`serveFrontend('/admin', $dir)`). Providers can also declare `permissions()`, `roles()`, `voters()`, `policies()`.
+
+**Migrations are declared, not just loaded**: a package declares them in composer `extra.glueful.migrations` (rows with `id`, `path` — a flat `migrations/` folder at the package root — `priority`, `mode: core|on_enable`), or `"migrations": "none"`. An installed package without that declaration can't register migrations (`loadMigrationsFrom()` throws `UndeclaredSchemaException`); only app-local providers keep the plain `loadMigrationsFrom()` lane. `extensions:enable` runs the package's migrations first, then enables it.
+
+Discovery is via the package's composer `extra.glueful.provider` (package `type: glueful-extension`). Scaffold with `php glueful create:extension <name>` (note: `create:extension`, **not** `extensions:create`); manage installed ones with `extensions:enable|disable|list|info|diagnose|summary|cache`.
 
 ## CLI
 
-The console is `php glueful <command>` (artisan's analogue — but **not** `php artisan`). The framework also ships an executable bin that Composer symlinks, so `vendor/bin/glueful <command>` runs it **without `php`** (and `./glueful` works if the project's root entry has the execute bit). Prefer `php glueful` in docs/examples unless the project standardizes on the bin, and note the per-project console needs the app bootstrap — so the command set comes from the app + its enabled extensions.
+The console is `php glueful <command>` (artisan's analogue — but **not** `php artisan`). The framework also ships an executable bin that Composer symlinks, so `vendor/bin/glueful <command>` runs it **without `php`**. Prefer `php glueful` in docs/examples unless the project standardizes on the bin; the command set comes from the app + its enabled extensions.
 
-Writing commands: extend `Glueful\Console\BaseCommand`, carry a `#[AsCommand]` attribute, and they're auto-discovered from `Console/Commands/`. Resolve string-keyed container services (e.g. the connection) with `$this->getServiceDynamic('database')`; class-keyed ones with `$this->getService(Foo::class)`.
+Common: `migrate:create|run|rollback|status`, `db:seed` (runs `App\Database\Seeders\DatabaseSeeder` by default), `scaffold:controller|model|dto|request|resource|middleware|job|rule|filter|factory|seeder|test`, `event:create|listener`, `queue:work|failed|retry|restart`, `queue:scheduler` (jobs live in `config/schedule.php`), `route:debug`, `route:cache:clear`, `generate:openapi`, `doctor`. There is no `make:*`, `config:cache` or `config:clear`.
+
+Writing commands: extend `Glueful\Console\BaseCommand` with an `#[AsCommand]` attribute. App commands are **not** auto-discovered — register them from a provider's `boot()` with `$this->discoverCommands('App\\Console\\Commands', base_path($context, 'app/Console/Commands'))` or `$this->commands([...])`. In a command, use `$this->getContext()`; resolve string-keyed services with `$this->getServiceDynamic('database')`, class-keyed ones with `$this->getService(Foo::class)`.
 
 ## When something seems missing
 
@@ -178,6 +219,8 @@ Writing commands: extend `Glueful\Console\BaseCommand`, carry a `#[AsCommand]` a
 
 - `DB::`, `Cache::`, `Auth::`, `Route::` static facades → **no**; use `db($context)`, `app($context, …)`, the router instance.
 - `Model::create([...])` / `Model::all()` / `Model::query()` *without context* → **no**; they exist but are context-first: `Model::create($context, [...])`, `Model::query($context)`, or `new Model([...], $context)->save()`.
-- `php artisan` → **no**; `php glueful`.
+- `$this->db` in a controller, `$connection->beginTransaction()` → **no**; `db($this->context)`, `->transaction(fn)`.
+- `$router->resource()`, `Storage::put`, `view()`, `now()`, `logger()`, `auth()->user()` → **no**; explicit routes, injected services, `$this->userContext`.
+- `php artisan` / `make:*` → **no**; `php glueful` / `scaffold:*`.
 - Blade templates → **no**; this is an API framework (JSON responses via `Response::success`).
-- `env()` everywhere in code → prefer `config($context, …)`; `env()` is for config files and bootstrap.
+- `env()` everywhere in code → prefer `config($context, …)`; `env()` is for config files and bootstrap. Env names: `BASE_URL` (not `APP_URL`), `JWT_KEY` (not `JWT_SECRET`), `DB_DRIVER` (not `DB_CONNECTION`).
