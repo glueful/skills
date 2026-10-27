@@ -118,7 +118,7 @@ public function down(SchemaBuilderInterface $schema): void
 }
 ```
 
-Also inside `alterTable`: `renameColumn($from, $to)`, `modifyColumn('title')->string(300)`, `dropUnique()`, `dropForeign()`, `rename($new)`. Prefer this over the schema-level `$schema->dropColumn()`/`addColumn()` helpers, which return a result array instead of throwing and don't flush their SQL on MySQL/PostgreSQL. **SQLite** can't natively modify/drop columns or change FKs; Glueful does an audited create-copy-swap rebuild per `alterTable()` call and throws `UnsupportedSchemaOperationException` *before* changing anything if it can't preserve the table.
+Also inside `alterTable`: `renameColumn($from, $to)`, `modifyColumn('title')->string(300)`, `dropUnique()`, `dropForeign()`, `rename($new)`. Prefer this over the schema-level `$schema->dropColumn()`/`addColumn()` helpers, which return a result array instead of throwing and, on 1.91.2 and earlier, don't flush their SQL on MySQL/PostgreSQL. Likewise use `dropTableIfExists()` in `down()`: plain `dropTable()` only queues, and runners up to 1.91.2 never flush it. **SQLite** can't natively modify/drop columns or change FKs; Glueful does an audited create-copy-swap rebuild per `alterTable()` call and throws `UnsupportedSchemaOperationException` *before* changing anything if it can't preserve the table.
 
 **Fluent (no-callback) form:** `table()`/`createTable($n)`/`alterTable($n)` return the table builder; column methods return a `ColumnBuilder`, so call **`->end()`** before the next column (chaining `->string('x')` onto a column builder is a `TypeError`), then `->create()`/`->execute()` and `$schema->execute()`. Use it mainly for `$schema->preview()` / `validate()` before running.
 
