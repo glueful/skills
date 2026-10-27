@@ -160,7 +160,7 @@ class UpdateSearchCountersJob extends Job
 
 `php glueful scaffold:job UpdateSearchCounters` generates one in `app/Jobs/`. If a job keeps a constructor, its signature must stay `__construct(array $data = [], ?ApplicationContext $context = null)` and pass **both** to `parent::__construct()` — otherwise `$this->context` is null.
 
-Dispatch via `QueueManager::push(jobClass, $data, ?queue, ?connection)` (or `later($delaySeconds, jobClass, $data, …)`). **Retries:** the worker allows `min($data['maxAttempts'] ?? 3, queue:work --tries)` attempts — to change it, push `'maxAttempts' => 5` in the data (and run workers with `--tries` ≥ that). Pushing `maxAttempts` works on every version. A `getMaxAttempts()` override on the job class is read only by frameworks **newer than 1.91.2** (a `$maxAttempts` property never is). Likewise `queue:work --timeout` is enforced only after 1.91.2 (with pcntl: the job is released/failed and the worker exits); there is no per-job timeout.
+Dispatch via `QueueManager::push(jobClass, $data, ?queue, ?connection)` (or `later($delaySeconds, jobClass, $data, …)`). **Retries:** the worker allows `min($data['maxAttempts'] ?? 3, queue:work --tries)` attempts — to change it, push `'maxAttempts' => 5` in the data (and run workers with `--tries` ≥ that). Since 1.91.3 a `getMaxAttempts()` override on the job class counts too (a pushed `maxAttempts` wins; a `$maxAttempts` property is never read); before 1.91.3 only the pushed value did. `queue:work --timeout` is enforced since 1.91.3 (with pcntl: the job is released/failed and the worker exits, so run workers under a process manager); there is no per-job timeout.
 
 **Job payloads must be serializable data** — pass scalars/arrays (uuids, ids), not live objects/models. The job re-fetches what it needs in `handle()`.
 
@@ -201,7 +201,7 @@ If a side effect can fail or take time, it belongs in a job — inline it slows 
 - **Listeners must be `subscribe()`d** in a booted provider (extends `Glueful\Extensions\ServiceProvider`, listed in `config/serviceproviders.php`); `#[AsListener]` alone does nothing.
 - **`getSubscribedEvents()` maps `EventClass::class => 'method'` or `['method', priority]`**; the method must be public and accept the event.
 - **Jobs use `$this->context`**, carry data not objects, and re-load in `handle()`.
-- **Retry count = pushed `maxAttempts` (default 3) capped by `--tries`.** A `getMaxAttempts()` override counts only on frameworks newer than 1.91.2; pushing `maxAttempts` is the version-safe way.
+- **Retry count = pushed `maxAttempts`, else the job's `getMaxAttempts()` (since 1.91.3; default 3), capped by `--tries`.**
 - **Don't "simplify" a job to a plain `handle()` class** — `JobInterface` is required; extend `Glueful\Queue\Job`.
 - **`--once` runs one job**; use `--stop-when-empty` to drain.
 - **Events are dispatched from services**, not controllers (keeps HTTP thin).
