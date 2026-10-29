@@ -1,6 +1,6 @@
 {
   "name": "glueful-skills",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Coding-assistant skills for building with the Glueful PHP framework — ApplicationContext, framework helpers, ORM, routing, and extensions. Stops LLMs from hallucinating APIs.",
   "author": {
     "name": "Glueful"

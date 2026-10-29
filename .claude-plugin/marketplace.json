@@ -1,6 +1,6 @@
 {
   "name": "glueful-skills",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Marketplace wrapping the Glueful coding-assistant skills plugin",
   "owner": {
     "name": "Glueful",

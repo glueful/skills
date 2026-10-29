@@ -13,10 +13,11 @@ For extensions, route files are runtime wiring: load them from the extension pro
 
 ```php
 <?php
-/** @var \Glueful\Routing\Router $router */   // injected by RouteManifest (app files also get $context)
 
-use Glueful\Routing\Router;
 use App\Controllers\WidgetController;
+use Glueful\Routing\Router;
+
+/** @var Router $router */   // injected by RouteManifest (app files also get $context)
 
 $router->group(['prefix' => '/v1/widgets', 'middleware' => ['auth']], function (Router $router) {
     $router->get('/', [WidgetController::class, 'index'])->name('widgets.index');
@@ -157,8 +158,9 @@ Full reference (in the framework package): `docs/OPENAPI_REFLECT.md`, `docs/REQU
 - **Docs live on the controller method, not the route file.** `@route`/`@response` docblocks above `$router->...` calls are dead (the skeleton's sample route file may still carry some — they do nothing).
 - **A typed DTO beats an attribute.** Don't hand-write `#[ApiRequestBody]`/`#[ApiResponse]` for a handler that already takes a `RequestData` param or returns a `ResponseData` — it would only drift.
 - **No inline JSON request schema.** `inlineSchema` with `application/json` throws; JSON bodies are a DTO class.
-- **Run `php glueful route:cache:clear` on deploy** (and when new routes don't show up). `php glueful route:debug [--method=POST --path=/auth]` lists what's registered.
-- **File-level docblock: fully-qualify the `@var`** — `@var \Glueful\Routing\Router $router`.
+- **A stale compiled route cache makes `generate:openapi` silently drop routes.** With `storage/cache/routes_*.php` present the generator can reflect an old router and emit a spec missing whole route files, with no error. Run `php glueful route:cache:clear` first; a composer script `"docs:openapi": "php glueful route:cache:clear && php glueful generate:openapi --no-interaction"` makes this the only way anyone runs it. `php glueful route:debug [--method=POST --path=/auth]` lists what is actually registered.
+- **`generate:openapi` prompts for confirmation** — pass `--no-interaction` in scripts and CI, or it waits forever.
+- **File-level docblock uses the imported short name** — `use Glueful\Routing\Router;` then `@var Router $router`, not the fully-qualified class.
 
 ## Not-Laravel reminders
 
@@ -177,4 +179,4 @@ Full reference (in the framework package): `docs/OPENAPI_REFLECT.md`, `docs/REQU
 - [ ] Middleware names are real aliases or container-registered; custom middleware implements `RouteMiddleware::handle(Request, callable, mixed ...$params): mixed`.
 - [ ] Path-param constraints via `->where(...)`; route named via `->name(...)`.
 - [ ] Optional/feature-flagged routes guarded with an early return.
-- [ ] OpenAPI: typed endpoint where possible; `#[ApiOperation]`/`#[QueryParam]`/`#[ApiRequestBody]`/`#[ApiResponse]` on the **controller method** only for prose, query params, manual bodies, uninferred error codes, or non-JSON responses. Ran `generate:openapi` to confirm.
+- [ ] OpenAPI: typed endpoint where possible; `#[ApiOperation]`/`#[QueryParam]`/`#[ApiRequestBody]`/`#[ApiResponse]` on the **controller method** only for prose, query params, manual bodies, uninferred error codes, or non-JSON responses. Cleared the route cache, ran `generate:openapi --no-interaction`, and confirmed the new paths are in the spec.
